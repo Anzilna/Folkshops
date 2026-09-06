@@ -1,0 +1,6 @@
+{
+  "name": "@folkshops/tool-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Typed contracts for AI tools shared between ai-service and core-api/tools. Not yet implemented."
+}
