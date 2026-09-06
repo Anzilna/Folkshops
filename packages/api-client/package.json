@@ -1,0 +1,6 @@
+{
+  "name": "@folkshops/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Typed client for the Core API, shared by all frontend apps. Not yet implemented."
+}

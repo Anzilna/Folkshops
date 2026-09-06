@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788696921347,
+      "tag": "0000_robust_stick",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788696937498,
+      "tag": "0001_enable-rls-memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788699012593,
+      "tag": "0002_fix-rls-empty-string-guc",
+      "breakpoints": true
+    }
+  ]
+}

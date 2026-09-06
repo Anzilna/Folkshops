@@ -1,0 +1,6 @@
+{
+  "name": "@folkshops/workers",
+  "version": "0.0.0",
+  "private": true,
+  "description": "BullMQ background workers (email/SMS/WhatsApp, indexing, outbox relay). Phase 2, not yet implemented."
+}

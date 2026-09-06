@@ -1,0 +1,6 @@
+{
+  "name": "@folkshops/platform-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal Folkshops platform administration — Next.js. Phase 1, not yet implemented (separate auth boundary from merchant users)."
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@folkshops/merchant-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Merchant admin dashboard — Next.js. Phase 1, not yet implemented."
+}

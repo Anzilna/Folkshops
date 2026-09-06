@@ -1,0 +1,6 @@
+{
+  "name": "@folkshops/storefront",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tenant-facing storefront (e.g. nike.folkshops.com) — Next.js. Phase 1, not yet implemented."
+}

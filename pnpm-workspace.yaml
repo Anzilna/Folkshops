@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "database/rls-tests"
+allowBuilds:
+  esbuild: true
