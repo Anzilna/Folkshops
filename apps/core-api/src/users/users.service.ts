@@ -1,14 +1,17 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
-import { DRIZZLE, Db } from "../database/database.module";
+import { DbRouter } from "../database/db-router";
 import { users } from "../database/schema";
 
 @Injectable()
 export class UsersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(private readonly dbRouter: DbRouter) {}
 
+  /** Auth-path lookup (login credential check, register uniqueness check) — always strong. */
   async findByEmail(email: string) {
-    const [user] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
-    return user ?? null;
+    return this.dbRouter.read("strong", async (db) => {
+      const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      return user ?? null;
+    });
   }
 }

@@ -8,6 +8,40 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # One temporary Postgres container for the whole job — CI never talks to
+    # RDS (dev or prod) and never needs a real read replica. Both
+    # DATABASE_PRIMARY_URL and DATABASE_REPLICA_URL below point at this same
+    # container: no real replication in CI, matching local dev exactly (see
+    # docs/decisions/0005-primary-replica-routing.md).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: folkshops
+          POSTGRES_PASSWORD: folkshops
+          POSTGRES_DB: folkshops_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U folkshops -d folkshops_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Schema-owning role — used for the bootstrap script and migrations.
+      MIGRATIONS_DATABASE_URL: postgres://folkshops:folkshops@localhost:5432/folkshops_dev
+      # App runtime role, created by the bootstrap step below (this service
+      # container has no docker-entrypoint-initdb.d equivalent — service
+      # containers start before checkout runs, so database/init/01-app-role.sql
+      # can't be mounted into it the way local Docker Compose does it).
+      APP_DB_PASSWORD: ci-throwaway-password
+      DATABASE_PRIMARY_URL: postgres://folkshops_app:ci-throwaway-password@localhost:5432/folkshops_dev
+      DATABASE_REPLICA_URL: postgres://folkshops_app:ci-throwaway-password@localhost:5432/folkshops_dev
+      RLS_TEST_DATABASE_URL: postgres://folkshops_app:ci-throwaway-password@localhost:5432/folkshops_dev
+      JWT_SECRET: ci-test-secret
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,3 +57,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
+
+      - name: Bootstrap least-privilege app role
+        run: pnpm --filter @folkshops/core-api db:bootstrap-app-role
+
+      - name: Apply migrations (schema-owning role)
+        run: pnpm --filter @folkshops/core-api db:migrate
+
+      - name: Run tests (unit + mandatory RLS isolation suite)
+        run: pnpm test

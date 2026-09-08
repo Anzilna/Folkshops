@@ -1,8 +1,8 @@
-import { ConflictException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { eq, sql } from "drizzle-orm";
-import { DRIZZLE, Db } from "../database/database.module";
+import { DbRouter } from "../database/db-router";
 import { withTenantContext } from "../database/tenant-context";
 import { memberships, tenants, users } from "../database/schema";
 import { TenantsService } from "../tenants/tenants.service";
@@ -20,7 +20,7 @@ const PASSWORD_HASH_ROUNDS = 10;
 @Injectable()
 export class AuthService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly dbRouter: DbRouter,
     private readonly tenantsService: TenantsService,
     private readonly usersService: UsersService,
     private readonly jwt: JwtService,
@@ -43,25 +43,28 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(input.password, PASSWORD_HASH_ROUNDS);
 
-    // The tenant doesn't exist until this transaction runs, so tenant
-    // context can't be set up front — set it right after the tenant is
-    // created, before the one RLS-protected insert (memberships) happens.
-    const { tenant, user, membership } = await this.db.transaction(async (tx) => {
-      const [tenant] = await tx
-        .insert(tenants)
-        .values({ name: input.storeName, slug: input.storeSlug })
-        .returning();
-      const [user] = await tx
-        .insert(users)
-        .values({ email: input.email, passwordHash, name: input.name })
-        .returning();
-      await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenant.id}, true)`);
-      const [membership] = await tx
-        .insert(memberships)
-        .values({ tenantId: tenant.id, userId: user.id, role: "owner" })
-        .returning();
-      return { tenant, user, membership };
-    });
+    // A write, unconditionally on primary. The tenant doesn't exist until
+    // this transaction runs, so tenant context can't be set up front —
+    // set it right after the tenant is created, before the one
+    // RLS-protected insert (memberships) happens.
+    const { tenant, user, membership } = await this.dbRouter.write((db) =>
+      db.transaction(async (tx) => {
+        const [tenant] = await tx
+          .insert(tenants)
+          .values({ name: input.storeName, slug: input.storeSlug })
+          .returning();
+        const [user] = await tx
+          .insert(users)
+          .values({ email: input.email, passwordHash, name: input.name })
+          .returning();
+        await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenant.id}, true)`);
+        const [membership] = await tx
+          .insert(memberships)
+          .values({ tenantId: tenant.id, userId: user.id, role: "owner" })
+          .returning();
+        return { tenant, user, membership };
+      }),
+    );
 
     return {
       accessToken: this.issueToken({
@@ -82,12 +85,15 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    // Membership is tenant-owned data — go through withTenantContext so
-    // Postgres RLS enforces the scoping too, not just this WHERE clause.
-    const membership = await withTenantContext(this.db, input.tenantId, async (tx) => {
-      const [m] = await tx.select().from(memberships).where(eq(memberships.userId, user.id)).limit(1);
-      return m ?? null;
-    });
+    // Membership is tenant-owned data and gates auth — always strong, never
+    // "eventual". withTenantContext still does the RLS work; DbRouter only
+    // decides which physical connection that transaction runs on.
+    const membership = await this.dbRouter.read("strong", (db) =>
+      withTenantContext(db, input.tenantId, async (tx) => {
+        const [m] = await tx.select().from(memberships).where(eq(memberships.userId, user.id)).limit(1);
+        return m ?? null;
+      }),
+    );
     if (!membership) {
       throw new UnauthorizedException("No access to this store");
     }

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { Db } from "./database.module";
+import type { Db } from "./tokens";
 
 /**
  * Runs `fn` inside one Postgres transaction with `app.tenant_id` set via

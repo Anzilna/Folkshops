@@ -1,15 +1,15 @@
-import { Controller, Get, Inject, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
-import { DRIZZLE, Db } from "../database/database.module";
+import { DbRouter } from "../database/db-router";
 
 @Controller("health")
 export class HealthController {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(private readonly dbRouter: DbRouter) {}
 
   @Get()
   async check() {
     try {
-      await this.db.execute(sql`SELECT 1`);
+      await this.dbRouter.read("strong", (db) => db.execute(sql`SELECT 1`));
       return { status: "ok", db: "connected" };
     } catch {
       throw new ServiceUnavailableException({ status: "error", db: "unreachable" });

@@ -10,7 +10,8 @@
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest --passWithNoTests",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:bootstrap-app-role": "ts-node scripts/bootstrap-app-role.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

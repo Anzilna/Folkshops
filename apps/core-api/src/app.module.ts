@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
+import { ProductsModule } from "./products/products.module";
 import { TenancyModule } from "./tenancy/tenancy.module";
 import { TenantResolverMiddleware } from "./tenancy/tenant-resolver.middleware";
 import { TenantsModule } from "./tenants/tenants.module";
@@ -17,6 +18,7 @@ import { UsersModule } from "./users/users.module";
     TenantsModule,
     UsersModule,
     AuthModule,
+    ProductsModule,
   ],
 })
 export class AppModule implements NestModule {

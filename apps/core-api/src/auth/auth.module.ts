@@ -8,21 +8,23 @@ import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { TenantMatchGuard } from "./tenant-match.guard";
 
+const jwtModule = JwtModule.registerAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => ({
+    secret: config.get<string>("JWT_SECRET"),
+    signOptions: { expiresIn: "7d" },
+  }),
+});
+
 @Module({
-  imports: [
-    TenantsModule,
-    UsersModule,
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>("JWT_SECRET"),
-        signOptions: { expiresIn: "7d" },
-      }),
-    }),
-  ],
+  imports: [TenantsModule, UsersModule, jwtModule],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard, TenantMatchGuard],
-  exports: [JwtAuthGuard, TenantMatchGuard],
+  // JwtModule re-exported, not just the guards: JwtAuthGuard's constructor
+  // needs JwtService, and any module that imports AuthModule purely to use
+  // that guard (e.g. ProductsModule) needs it resolvable in its own
+  // injector context too — exporting only the guard classes isn't enough.
+  exports: [JwtAuthGuard, TenantMatchGuard, jwtModule],
 })
 export class AuthModule {}

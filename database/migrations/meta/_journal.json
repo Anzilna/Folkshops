@@ -22,6 +22,20 @@
       "when": 1788699012593,
       "tag": "0002_fix-rls-empty-string-guc",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788803822513,
+      "tag": "0003_clever_firelord",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788803837957,
+      "tag": "0004_enable-rls-products",
+      "breakpoints": true
     }
   ]
 }

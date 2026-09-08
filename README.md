@@ -9,7 +9,10 @@ Phase 1 (Foundation) is in progress. Currently working:
 - Monorepo tooling (pnpm workspaces + Turborepo).
 - `apps/core-api` — NestJS, boots, connects to Postgres via Drizzle, exposes `GET /health`.
 - Tenancy + auth + RBAC + Row-Level Security: `POST /auth/register` (self-service store signup), `POST /auth/login`, `GET /auth/me`. See `docs/decisions/0003-tenancy-rls.md`.
-- `database/rls-tests` — mandatory concurrent RLS isolation test, run directly against Postgres.
+- Products: `GET /products`, `GET /products/:id` (public, tenant-scoped), `POST`/`PATCH`/`DELETE /products` (authenticated members only). RLS-protected like every other tenant-owned table.
+- Primary/replica-ready database routing (`DbRouter`) — `write()` / `read("strong"|"eventual")`, with fallback-to-primary if a replica read fails. No real replica exists yet (local/CI point both logical connections at one Postgres, on purpose) — see `docs/decisions/0005-primary-replica-routing.md`.
+- `database/rls-tests` — mandatory concurrent RLS isolation test, run directly against Postgres, now including primary+replica routing.
+- CI (`.github/workflows/ci.yml`) runs the full test suite (not just lint/build) against a temporary Postgres service container.
 
 Everything else under `apps/` and `packages/` is a placeholder (see each one's README) — scaffolded shape, no implementation yet.
 
@@ -41,9 +44,12 @@ pnpm --filter @folkshops/core-api dev
 curl http://localhost:4000/health
 # -> {"status":"ok","db":"connected"}
 
-# 7. Run the mandatory RLS isolation test
-pnpm --filter @folkshops/rls-tests test
+# 7. Run tests (DbRouter unit tests + the mandatory RLS isolation suite,
+#    now covering both the primary and replica connection paths)
+pnpm test
 ```
+
+`.env.example` sets `DATABASE_PRIMARY_URL` and `DATABASE_REPLICA_URL` to the **same** local Postgres — there is no real replica locally or in CI, only the routing code. See `docs/decisions/0005-primary-replica-routing.md`.
 
 ## Repository layout
 
