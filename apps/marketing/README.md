@@ -1,5 +1,13 @@
 # @folkshops/marketing
 
-Marketing site (folkshops.com) — Next.js. Phase 1, not yet implemented.
+Marketing site (folkshops.com) — Next.js (App Router) + Tailwind CSS v4.
 
-Not yet scaffolded — see the root README and `docs/decisions/` for build order.
+Scaffolding only — no real pages yet.
+
+## Local development
+
+```bash
+pnpm --filter @folkshops/marketing dev
+```
+
+Runs on http://localhost:3000 (or the next free port if run alongside other apps).

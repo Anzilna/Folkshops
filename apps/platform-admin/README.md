@@ -1,5 +1,14 @@
 # @folkshops/platform-admin
 
-Internal Folkshops platform administration — Next.js. Phase 1, not yet implemented (separate auth boundary from merchant users).
+Internal Folkshops platform administration — Next.js (App Router) + Tailwind CSS v4.
 
-Not yet scaffolded — see the root README and `docs/decisions/` for build order.
+Separate auth boundary from merchant users — internal staff only, not tenant members.
+Scaffolding only — no real pages yet.
+
+## Local development
+
+```bash
+pnpm --filter @folkshops/platform-admin dev
+```
+
+Runs on http://localhost:3000 (or the next free port if run alongside other apps).
