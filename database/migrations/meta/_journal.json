@@ -36,6 +36,34 @@
       "when": 1788803837957,
       "tag": "0004_enable-rls-products",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788857073063,
+      "tag": "0005_lazy_psynapse",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788859884865,
+      "tag": "0006_shallow_baron_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788860333478,
+      "tag": "0007_messy_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788860494537,
+      "tag": "0008_enable-rls-storefront-customer-tables",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Backs the core-api integration suite (Redis-backed rate limiting +
+      # caching) — not used by the default `pnpm test` step below, only by
+      # the explicit integration step further down.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       # Schema-owning role — used for the bootstrap script and migrations.
@@ -41,6 +53,9 @@ jobs:
       DATABASE_REPLICA_URL: postgres://folkshops_app:ci-throwaway-password@localhost:5432/folkshops_dev
       RLS_TEST_DATABASE_URL: postgres://folkshops_app:ci-throwaway-password@localhost:5432/folkshops_dev
       JWT_SECRET: ci-test-secret
+      PLATFORM_ADMIN_JWT_SECRET: ci-test-secret-platform-admin
+      CUSTOMER_JWT_SECRET: ci-test-secret-customer
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -66,3 +81,6 @@ jobs:
 
       - name: Run tests (unit + mandatory RLS isolation suite)
         run: pnpm test
+
+      - name: Run core-api integration suite (real Postgres + Redis: auth flows, rate limiting, caching)
+        run: pnpm --filter @folkshops/core-api test:integration

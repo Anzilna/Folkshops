@@ -10,8 +10,8 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { TenantMatchGuard } from "../auth/tenant-match.guard";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { TenantMatchGuard } from "../auth/guards/tenant-match.guard";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
 import { CreateProductDto } from "./dto/create-product.dto";

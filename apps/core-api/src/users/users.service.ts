@@ -14,4 +14,12 @@ export class UsersService {
       return user ?? null;
     });
   }
+
+  /** Auth-path lookup (refresh token exchange) — always strong. */
+  async findById(id: string) {
+    return this.dbRouter.read("strong", async (db) => {
+      const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      return user ?? null;
+    });
+  }
 }

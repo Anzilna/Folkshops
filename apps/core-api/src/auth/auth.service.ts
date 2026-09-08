@@ -7,12 +7,18 @@ import { withTenantContext } from "../database/tenant-context";
 import { memberships, tenants, users } from "../database/schema";
 import { TenantsService } from "../tenants/tenants.service";
 import { UsersService } from "../users/users.service";
+import { TokenService } from "./token.service";
 
 export interface JwtPayload {
   sub: string;
   tenantId: string;
   role: "owner" | "staff";
   email: string;
+}
+
+export interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
 }
 
 const PASSWORD_HASH_ROUNDS = 10;
@@ -24,6 +30,7 @@ export class AuthService {
     private readonly tenantsService: TenantsService,
     private readonly usersService: UsersService,
     private readonly jwt: JwtService,
+    private readonly tokens: TokenService,
   ) {}
 
   /** Self-service merchant onboarding: creates a new store, its first (owner) user, and their membership. */
@@ -67,7 +74,7 @@ export class AuthService {
     );
 
     return {
-      accessToken: this.issueToken({
+      tokens: await this.issueTokens(tenant.id, {
         sub: user.id,
         tenantId: tenant.id,
         role: membership.role,
@@ -104,7 +111,7 @@ export class AuthService {
       // asked RLS to filter by — if RLS were ever misconfigured (as it
       // was, until the folkshops_app role fix) this is the layer that
       // still stops a cross-tenant token from being issued.
-      accessToken: this.issueToken({
+      tokens: await this.issueTokens(membership.tenantId, {
         sub: user.id,
         tenantId: membership.tenantId,
         role: membership.role,
@@ -113,7 +120,44 @@ export class AuthService {
     };
   }
 
-  private issueToken(payload: JwtPayload): string {
-    return this.jwt.sign(payload);
+  /**
+   * Exchanges a refresh token cookie for a fresh access+refresh pair.
+   * Re-derives the membership/role from the DB rather than trusting
+   * anything cached in the old token — a role change or removed membership
+   * takes effect the next time this runs, not just at next full login.
+   */
+  async refresh(rawRefreshToken: string): Promise<TokenPair> {
+    const invalidMsg = "Invalid or expired refresh token";
+    const consumed = await this.tokens.consumeRefreshToken("staff", rawRefreshToken);
+    if (!consumed || !consumed.tenantId) throw new UnauthorizedException(invalidMsg);
+
+    const user = await this.usersService.findById(consumed.subjectId);
+    if (!user) throw new UnauthorizedException(invalidMsg);
+
+    const membership = await this.dbRouter.read("strong", (db) =>
+      withTenantContext(db, consumed.tenantId!, async (tx) => {
+        const [m] = await tx.select().from(memberships).where(eq(memberships.userId, user.id)).limit(1);
+        return m ?? null;
+      }),
+    );
+    if (!membership) throw new UnauthorizedException(invalidMsg);
+
+    return this.issueTokens(membership.tenantId, {
+      sub: user.id,
+      tenantId: membership.tenantId,
+      role: membership.role,
+      email: user.email,
+    });
+  }
+
+  /** Not an error if the token is already gone/invalid — logout should always succeed from the client's point of view. */
+  async logout(rawRefreshToken: string): Promise<void> {
+    await this.tokens.revokeToken(rawRefreshToken);
+  }
+
+  private async issueTokens(tenantId: string, accessPayload: JwtPayload): Promise<TokenPair> {
+    const accessToken = this.jwt.sign(accessPayload);
+    const refreshToken = await this.tokens.issueRefreshToken("staff", accessPayload.sub, tenantId);
+    return { accessToken, refreshToken };
   }
 }

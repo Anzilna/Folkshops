@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-// Light-only for now, deliberately not wired to system/dark theming yet
-// (unlike merchant-admin/platform-admin) — @folkshops/ui/css's tokens are
-// still imported via globals.css, so enabling it later is just adding back
-// <ThemeScript />/<ThemeProvider> here, no CSS changes needed.
+// Light-only by design (unlike merchant-admin/platform-admin, which follow
+// the OS light/dark setting) — not wired to @folkshops/ui's ThemeScript/
+// ThemeProvider.
 export const metadata: Metadata = {
   title: "Folkshops",
   description: "Multi-tenant e-commerce platform",

@@ -16,6 +16,12 @@ Any future shared component (buttons, inputs, cards, ...) should use the semanti
 this provides (`bg-background`, `text-foreground`, `border-border`, etc.) instead of hardcoded
 colors, so it's dark-mode-correct automatically — see `docs/decisions/` for the full rationale.
 
+**Not every app wires up `ThemeScript`/`ThemeProvider`** — `merchant-admin` and `platform-admin` do
+(follow the OS light/dark setting automatically); `marketing` and `storefront` are light-only by
+design and deliberately don't import them, even though their `globals.css` still pulls in
+`theme.css` for the token values. `ThemeToggle` (a manual light/dark button) exists in this package
+but isn't currently used by any app.
+
 ## Using it in an app
 
 ```ts
