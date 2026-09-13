@@ -1,3 +1,5 @@
+import type { ImportResult, PaginatedResult, TableQueryParams } from "@folkshops/ui";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 /**
@@ -36,4 +38,55 @@ export async function apiFetch(path: string, init: RequestInit = {}, tenantSlug?
     headers,
     credentials: "include",
   });
+}
+
+/** Reads the dev-only tenant-slug cookie from the browser's own document.cookie
+ * — the client-component counterpart to getStoredTenantSlug(), which takes a
+ * server-side Cookie header string instead. */
+function currentTenantSlug(): string | null {
+  if (typeof document === "undefined") return null;
+  return getStoredTenantSlug(document.cookie);
+}
+
+function buildTableQueryString(params: TableQueryParams): string {
+  const sp = new URLSearchParams();
+  sp.set("page", String(params.page));
+  sp.set("limit", String(params.limit));
+  if (params.sortBy) sp.set("sortBy", params.sortBy);
+  if (params.sortDir) sp.set("sortDir", params.sortDir);
+  if (params.search) sp.set("search", params.search);
+  for (const [key, value] of Object.entries(params.filters)) {
+    if (value) sp.set(key, value);
+  }
+  return sp.toString();
+}
+
+/**
+ * The three functions every list page hands to @folkshops/ui's DataTable —
+ * one call each wires up paginated fetch/export/import against a given
+ * core-api resource path, so a page component only needs its columns and
+ * these three lines, not a hand-rolled fetch per page.
+ */
+export function createTableFetcher<T>(path: string) {
+  return async (params: TableQueryParams): Promise<PaginatedResult<T>> => {
+    const res = await apiFetch(`${path}?${buildTableQueryString(params)}`, {}, currentTenantSlug());
+    if (!res.ok) throw new Error(`Failed to load ${path} (${res.status})`);
+    return res.json();
+  };
+}
+
+export function createExportFetcher(path: string) {
+  return async (params: TableQueryParams): Promise<Blob> => {
+    const res = await apiFetch(`${path}?${buildTableQueryString(params)}`, {}, currentTenantSlug());
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    return res.blob();
+  };
+}
+
+export function createImportFetcher(path: string) {
+  return async (rows: Record<string, string>[]): Promise<ImportResult> => {
+    const res = await apiFetch(path, { method: "POST", body: JSON.stringify({ rows }) }, currentTenantSlug());
+    if (!res.ok) throw new Error(`Import failed (${res.status})`);
+    return res.json();
+  };
 }

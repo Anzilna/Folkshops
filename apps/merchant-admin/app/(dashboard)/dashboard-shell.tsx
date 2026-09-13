@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { href: "/products", label: "Products", icon: icon("M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8") },
   { href: "/orders", label: "Orders", icon: icon("M6 3h12l1 5H5l1-5zM5 8h14l-1.2 11.2A2 2 0 0115.8 21H8.2a2 2 0 01-2-1.8L5 8zM9 12h6") },
   { href: "/categories", label: "Categories", icon: icon("M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5") },
+  { href: "/inventory", label: "Inventory", icon: icon("M3 7h18v13H3V7zM3 7l2-4h14l2 4M9 11h6") },
   {
     href: "/customers",
     label: "Customers",
@@ -85,7 +86,10 @@ export function DashboardShell({ tenantName, userEmail, children }: DashboardShe
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl px-6 py-10">{children}</div>
+          {/* Wider than the original max-w-4xl — the table pages
+              (products/orders/inventory/customers) need the room, and the
+              dashboard's onboarding cards still read fine at this width. */}
+          <div className="mx-auto max-w-6xl px-6 py-10">{children}</div>
         </main>
       </div>
     </div>

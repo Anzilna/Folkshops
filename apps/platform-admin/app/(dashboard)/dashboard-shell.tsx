@@ -81,7 +81,7 @@ export function DashboardShell({ adminEmail, children }: DashboardShellProps) {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl px-6 py-10">{children}</div>
+          <div className="mx-auto max-w-6xl px-6 py-10">{children}</div>
         </main>
       </div>
     </div>
