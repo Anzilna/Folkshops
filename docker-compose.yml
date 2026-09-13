@@ -32,6 +32,50 @@ services:
       timeout: 5s
       retries: 10
 
+  # Optional — `pnpm --filter @folkshops/core-api dev` on the host works
+  # exactly as before and is unaffected by this. This exists purely so
+  # `docker compose up -d` can also cover the backend for anyone who'd
+  # rather not run a separate terminal for it. The four Next.js frontends
+  # are deliberately NOT containerized — Next's dev server hot-reloads
+  # better run natively, and there's no reason to add that complexity here.
+  core-api:
+    build:
+      context: .
+      dockerfile: apps/core-api/Dockerfile
+    container_name: folkshops-core-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      # Container-network hostnames (service names), not localhost — these
+      # only apply inside this container. Native `pnpm dev` on the host
+      # still reads apps/core-api/.env, which correctly uses localhost.
+      DATABASE_PRIMARY_URL: postgres://folkshops_app:folkshops_app@postgres:5432/folkshops_dev
+      DATABASE_REPLICA_URL: postgres://folkshops_app:folkshops_app@postgres:5432/folkshops_dev
+      MIGRATIONS_DATABASE_URL: postgres://folkshops:folkshops@postgres:5432/folkshops_dev
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-only-change-me
+      PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
+      CUSTOMER_JWT_SECRET: dev-only-change-me-three
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003
+    ports:
+      - "4000:4000"
+    volumes:
+      # Bind-mount the repo for hot reload, but keep node_modules as named
+      # volumes so the container's own Linux-built modules (native
+      # bindings like bcrypt) aren't clobbered by the host's — e.g. macOS
+      # — node_modules through the mount above.
+      - .:/app
+      - core-api-root-node-modules:/app/node_modules
+      - core-api-app-node-modules:/app/apps/core-api/node_modules
+
 volumes:
   folkshops-postgres-data:
   folkshops-redis-data:
+  core-api-root-node-modules:
+  core-api-app-node-modules:
