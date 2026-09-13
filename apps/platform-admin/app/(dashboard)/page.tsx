@@ -1,7 +1,11 @@
-export default function HomePage() {
+export default function DashboardPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <h1 className="text-2xl font-semibold">Folkshops Platform Admin</h1>
-    </main>
+    <div>
+      <h2 className="mb-1 text-lg font-medium">Platform overview</h2>
+      <p className="text-sm text-muted-foreground">
+        Internal Folkshops staff tools — separate auth boundary from merchant users. Nothing beyond
+        authentication is built here yet.
+      </p>
+    </div>
   );
 }
