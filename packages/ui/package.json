@@ -7,7 +7,7 @@
     "*.css"
   ],
   "exports": {
-    ".": "./src/theme.tsx",
+    ".": "./src/index.tsx",
     "./css": "./src/theme.css"
   },
   "peerDependencies": {
