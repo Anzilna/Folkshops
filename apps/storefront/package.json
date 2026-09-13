@@ -4,7 +4,7 @@
   "private": true,
   "description": "Tenant-facing storefront (e.g. nike.folkshops.com) — Next.js.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."

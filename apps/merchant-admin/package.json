@@ -4,7 +4,7 @@
   "private": true,
   "description": "Merchant admin dashboard — Next.js.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."
