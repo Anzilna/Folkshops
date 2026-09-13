@@ -8,13 +8,18 @@ import {
   Param,
   Patch,
   Post,
+  Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { TenantMatchGuard } from "../auth/guards/tenant-match.guard";
+import { ImportRowsDto } from "../common/dto/import-rows.dto";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
 import { CreateProductDto } from "./dto/create-product.dto";
+import { QueryProductsDto } from "./dto/query-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
 import { ProductsService } from "./products.service";
 
@@ -28,9 +33,23 @@ export class ProductsController {
   // what's visible, auth is a separate concern from browsing.
 
   @Get()
-  async list(@CurrentTenant() tenant?: TenantContext) {
+  async list(@Query() query: QueryProductsDto, @CurrentTenant() tenant?: TenantContext) {
     if (!tenant) throw new BadRequestException("No store resolved for this request");
-    return this.products.list(tenant.id);
+    return this.products.list(tenant.id, query);
+  }
+
+  // Declared before ":id" — Nest/Express match routes in registration
+  // order, so "export" would otherwise be swallowed by ":id" and never
+  // reached. Staff-only (unlike list/findOne): a CSV of every product,
+  // including draft ones a storefront visitor shouldn't see, is a
+  // management action, not catalog browsing.
+  @Get("export")
+  @UseGuards(JwtAuthGuard, TenantMatchGuard)
+  async exportCsv(@Query() query: QueryProductsDto, @CurrentTenant() tenant: TenantContext, @Res() res: Response) {
+    const csv = await this.products.exportCsv(tenant.id, query);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="products-${tenant.slug}.csv"`);
+    res.send(csv);
   }
 
   @Get(":id")
@@ -49,6 +68,12 @@ export class ProductsController {
   @UseGuards(JwtAuthGuard, TenantMatchGuard)
   create(@Body() dto: CreateProductDto, @CurrentTenant() tenant: TenantContext) {
     return this.products.create(tenant.id, dto);
+  }
+
+  @Post("import")
+  @UseGuards(JwtAuthGuard, TenantMatchGuard)
+  importRows(@Body() dto: ImportRowsDto, @CurrentTenant() tenant: TenantContext) {
+    return this.products.importRows(tenant.id, dto.rows);
   }
 
   @Patch(":id")

@@ -1,27 +1,47 @@
 import { Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, count, eq, ilike, SQL } from "drizzle-orm";
+import { bulkImport, BulkImportResult } from "../common/bulk-import.util";
+import { CsvColumn, toCsv } from "../common/csv.util";
+import { offsetFor, paginatedResult, PaginatedResult, resolveSort } from "../common/pagination.util";
 import { DbRouter } from "../database/db-router";
-import { CacheService } from "../redis/cache.service";
 import { products } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 import { CreateProductDto } from "./dto/create-product.dto";
+import { QueryProductsDto } from "./dto/query-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
 
-const LIST_CACHE_TTL_SECONDS = 30;
+const SORT_COLUMNS = {
+  name: products.name,
+  priceCents: products.priceCents,
+  status: products.status,
+  createdAt: products.createdAt,
+  updatedAt: products.updatedAt,
+} as const;
 
-function listCacheKey(tenantId: string): string {
-  return `products:list:${tenantId}`;
+function buildFilters(tenantId: string, query: QueryProductsDto): SQL | undefined {
+  const clauses = [eq(products.tenantId, tenantId)];
+  if (query.status) clauses.push(eq(products.status, query.status));
+  if (query.categoryId) clauses.push(eq(products.categoryId, query.categoryId));
+  if (query.search) clauses.push(ilike(products.name, `%${query.search}%`));
+  return and(...clauses);
 }
+
+const EXPORT_COLUMNS: CsvColumn<typeof products.$inferSelect>[] = [
+  { key: "id", header: "id" },
+  { key: "name", header: "name" },
+  { key: "slug", header: "slug" },
+  { key: "description", header: "description" },
+  { key: "priceCents", header: "priceCents" },
+  { key: "status", header: "status" },
+  { key: "categoryId", header: "categoryId" },
+];
 
 @Injectable()
 export class ProductsService {
-  constructor(
-    private readonly dbRouter: DbRouter,
-    private readonly cache: CacheService,
-  ) {}
+  constructor(private readonly dbRouter: DbRouter) {}
 
   async create(tenantId: string, input: CreateProductDto) {
-    const product = await this.dbRouter.write((db) =>
+    return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .insert(products)
@@ -30,25 +50,54 @@ export class ProductsService {
         return product;
       }),
     );
-    await this.cache.invalidate(listCacheKey(tenantId));
-    return product;
   }
 
   /**
-   * "eventual" — the master spec's own canonical example of a safe-to-be-
-   * stale read (non-critical catalog browsing). Nothing here is inventory,
-   * payment, or auth-adjacent. Cached on top of that same reasoning: a
-   * short TTL (correctness backstop if invalidate() below ever fails to
-   * fire — see CacheService) plus active invalidation on every write below,
-   * so the common case is fresh immediately, not just "eventually within
-   * 30s". Deliberately not applied to findById — see that method for why.
+   * Paginated/sorted/filtered — "eventual" (replica-tolerant, same
+   * reasoning as before: this is catalog browsing, non-critical staleness).
+   * Deliberately NOT cached, unlike the pre-pagination version of this
+   * method: caching was viable for exactly one query shape ("all products,
+   * no filters"), but every page/sort/filter combination is a distinct
+   * cache key, and CacheService only supports deleting one exact key on
+   * invalidate() — there's no wildcard delete, so a write could never
+   * cleanly invalidate every cached variant. A merchant filtering their
+   * own products right after editing one and seeing stale results would be
+   * a worse regression than losing a 30s cache on a read that already hits
+   * the replica.
    */
-  async list(tenantId: string) {
-    return this.cache.getOrSet(listCacheKey(tenantId), LIST_CACHE_TTL_SECONDS, () =>
-      this.dbRouter.read("eventual", (db) =>
-        withTenantContext(db, tenantId, async (tx) => tx.select().from(products)),
-      ),
+  async list(tenantId: string, query: QueryProductsDto): Promise<PaginatedResult<typeof products.$inferSelect>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where = buildFilters(tenantId, query);
+    const orderBy = resolveSort(query.sortBy, query.sortDir, SORT_COLUMNS, "createdAt");
+
+    return this.dbRouter.read("eventual", (db) =>
+      withTenantContext(db, tenantId, async (tx) => {
+        const [rows, [{ total }]] = await Promise.all([
+          tx.select().from(products).where(where).orderBy(orderBy).limit(limit).offset(offsetFor(page, limit)),
+          tx.select({ total: count() }).from(products).where(where),
+        ]);
+        return paginatedResult(rows, total, page, limit);
+      }),
     );
+  }
+
+  /** All matching rows as CSV, ignoring page/limit — an export is "give me
+   * everything that matches the filter", not one page of it. */
+  async exportCsv(tenantId: string, query: QueryProductsDto): Promise<string> {
+    const where = buildFilters(tenantId, query);
+    const orderBy = resolveSort(query.sortBy, query.sortDir, SORT_COLUMNS, "createdAt");
+
+    const rows = await this.dbRouter.read("eventual", (db) =>
+      withTenantContext(db, tenantId, async (tx) => tx.select().from(products).where(where).orderBy(orderBy)),
+    );
+    return toCsv(rows, EXPORT_COLUMNS);
+  }
+
+  /** See bulk-import.util.ts — validates each row against CreateProductDto
+   * and inserts one at a time so a bad row doesn't block the rest. */
+  async importRows(tenantId: string, rows: Record<string, string>[]): Promise<BulkImportResult> {
+    return bulkImport(rows, CreateProductDto, (dto) => this.create(tenantId, dto));
   }
 
   /**
@@ -70,7 +119,7 @@ export class ProductsService {
   }
 
   async update(tenantId: string, id: string, input: UpdateProductDto) {
-    const product = await this.dbRouter.write((db) =>
+    return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .update(products)
@@ -80,18 +129,14 @@ export class ProductsService {
         return product ?? null;
       }),
     );
-    await this.cache.invalidate(listCacheKey(tenantId));
-    return product;
   }
 
   async delete(tenantId: string, id: string) {
-    const product = await this.dbRouter.write((db) =>
+    return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx.delete(products).where(eq(products.id, id)).returning();
         return product ?? null;
       }),
     );
-    await this.cache.invalidate(listCacheKey(tenantId));
-    return product;
   }
 }

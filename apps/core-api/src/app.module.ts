@@ -4,6 +4,7 @@ import { ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { CartModule } from "./cart/cart.module";
 import { CategoriesModule } from "./categories/categories.module";
+import { CustomersModule } from "./customers/customers.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { InventoryModule } from "./inventory/inventory.module";
@@ -44,6 +45,7 @@ import { UsersModule } from "./users/users.module";
     ProductsModule,
     CategoriesModule,
     InventoryModule,
+    CustomersModule,
     PlatformAdminModule,
     StorefrontModule,
     CartModule,
