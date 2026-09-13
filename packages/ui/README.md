@@ -17,10 +17,14 @@ this provides (`bg-background`, `text-foreground`, `border-border`, etc.) instea
 colors, so it's dark-mode-correct automatically — see `docs/decisions/` for the full rationale.
 
 **Not every app wires up `ThemeScript`/`ThemeProvider`** — `merchant-admin` and `platform-admin` do
-(follow the OS light/dark setting automatically); `marketing` and `storefront` are light-only by
-design and deliberately don't import them, even though their `globals.css` still pulls in
-`theme.css` for the token values. `ThemeToggle` (a manual light/dark button) exists in this package
-but isn't currently used by any app.
+(follow the OS light/dark setting automatically, plus a manual `ThemeToggle` in merchant-admin's
+navbar); `marketing` and `storefront` are light-only by design and deliberately don't import them,
+even though their `globals.css` still pulls in `theme.css` for the token values.
+
+`src/assets/` — shared static assets (logo, icons) used by more than one app, so they're not
+duplicated across each app's own `public/` folder. Empty for now (no real logo/branding exists
+yet) — once something lands here, add a matching subpath to `package.json`'s `exports` (the same
+pattern as `./css`) so consuming apps can import it.
 
 ## Using it in an app
 
