@@ -1,4 +1,5 @@
 import { integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { categories } from "./categories";
 import { tenants } from "./tenants";
 
 export const productStatusEnum = pgEnum("product_status", ["draft", "active", "archived"]);
@@ -19,6 +20,9 @@ export const products = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
+    // Nullable — a product doesn't have to be categorized to exist. See
+    // categories.ts for why this is a single FK, not a join table.
+    categoryId: uuid("category_id").references(() => categories.id),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     description: text("description"),

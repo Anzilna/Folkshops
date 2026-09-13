@@ -64,6 +64,20 @@
       "when": 1788860494537,
       "tag": "0008_enable-rls-storefront-customer-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789323748887,
+      "tag": "0009_pink_ikaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789324000000,
+      "tag": "0010_enable-rls-catalog-cart-orders",
+      "breakpoints": true
     }
   ]
 }
