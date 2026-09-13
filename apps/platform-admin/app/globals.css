@@ -1,5 +1,13 @@
 @import "tailwindcss";
 @import "@folkshops/ui/css";
+/*
+ * Tailwind v4 auto-detects class names in this app's own files but skips
+ * node_modules — and @folkshops/ui resolves through the pnpm workspace
+ * symlink there. Without this, classes used only inside the shared
+ * DataTable/Button/Modal (e.g. `hidden` on the import file input) are
+ * never generated and the components render unstyled.
+ */
+@source "../../../packages/ui/src";
 
 body {
   background-color: var(--background);

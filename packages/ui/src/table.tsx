@@ -225,12 +225,12 @@ export function DataTable<T>({
       <div className="flex flex-wrap items-center gap-2">
         {title && <h2 className="mr-auto text-lg font-medium text-foreground">{title}</h2>}
 
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={searchPlaceholder}
-          className="w-48"
-        />
+        {/* Wrapper, not className="w-48" — Input applies w-full itself, and
+            two width utilities on one element resolve by stylesheet order,
+            not by which one the caller passed last. */}
+        <div className="w-56">
+          <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder={searchPlaceholder} />
+        </div>
 
         {filters.map((f) => (
           <Select
