@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, Matches, Min, MinLength } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
 
 // Hand-written rather than `PartialType(CreateProductDto)` (@nestjs/mapped-types)
 // to avoid adding a dependency for one small DTO.
@@ -18,6 +18,10 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
   @IsOptional()
   @IsInt()

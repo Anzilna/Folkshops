@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, Matches, Min, MinLength } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
 
 export class CreateProductDto {
   @IsString()
@@ -14,6 +14,10 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
   /** Smallest currency unit (paise for INR) — see schema/products.ts. */
   @IsInt()

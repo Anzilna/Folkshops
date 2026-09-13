@@ -33,5 +33,12 @@ const jwtModule = JwtModule.registerAsync({
     // made yet — see ConsoleOtpProvider. Swap this useClass once one is.
     { provide: OTP_PROVIDER, useClass: ConsoleOtpProvider },
   ],
+  // jwtModule re-exported alongside the guards, not just the guards
+  // themselves — same reason as AuthModule.exports: CustomerJwtAuthGuard's
+  // constructor needs JwtService, and CartModule/OrdersModule importing
+  // this purely for the guards need it resolvable in their own injector
+  // context too, or UnknownDependenciesException at boot (see CLAUDE.md's
+  // bug #3, same root cause, second module to hit it).
+  exports: [CustomerJwtAuthGuard, CustomerTenantMatchGuard, jwtModule],
 })
 export class StorefrontModule {}

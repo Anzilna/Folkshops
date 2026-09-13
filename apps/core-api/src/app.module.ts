@@ -2,8 +2,13 @@ import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
+import { CartModule } from "./cart/cart.module";
+import { CategoriesModule } from "./categories/categories.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
+import { InventoryModule } from "./inventory/inventory.module";
+import { OrdersModule } from "./orders/orders.module";
+import { StorefrontOrdersModule } from "./orders/storefront-orders.module";
 import { PlatformAdminModule } from "./platform-admin/platform-admin.module";
 import { ProductsModule } from "./products/products.module";
 import { RedisThrottlerStorage } from "./redis/redis-throttler.storage";
@@ -37,8 +42,13 @@ import { UsersModule } from "./users/users.module";
     UsersModule,
     AuthModule,
     ProductsModule,
+    CategoriesModule,
+    InventoryModule,
     PlatformAdminModule,
     StorefrontModule,
+    CartModule,
+    OrdersModule,
+    StorefrontOrdersModule,
   ],
 })
 export class AppModule implements NestModule {
