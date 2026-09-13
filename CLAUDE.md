@@ -7,86 +7,109 @@ India-first, multi-tenant e-commerce SaaS platform (Shopify-like). This file exi
 - **Build in phases, incrementally.** Don't implement a later phase's tech (Kafka, Debezium, advanced AI, K8s autoscaling, custom domains, etc.) before its dependencies exist. See "Build order" below.
 - **Explain before implementing.** For any new technology/component: what it is, what problem it solves, why Folkshops needs it now (not later), what alternative was passed over, where it sits architecturally, what happens if it fails, how it scales.
 - Every technology must have a concrete reason. Never add something to look sophisticated.
-- **Tenant isolation is layered, never single-mechanism**: authentication → membership → RBAC → tenant resolution → PostgreSQL RLS. Never rely on application code alone.
+- **Tenant isolation is layered, never single-mechanism**: authentication → membership → RBAC → tenant resolution → PostgreSQL RLS. Never rely on application code alone. The same "layered, never single-mechanism" idea extends to auth *itself*: staff/platform_admin/customer each get their own JWT secret and cookie pair, not one shared secret with a role field — see "Three separate auth surfaces" below for why.
 - Before modifying existing code: inspect what's actually there. Never assume a file/table/env var/service exists.
 - Two repos: `folkshops-app` (this repo — frontends, backend, migrations, tests) and a separate `folkshops-infra` (Terraform/Helm/Argo CD) — not created yet, out of scope until Phase 6.
 - Don't add features, abstractions, or guards that have no caller yet (see "Deliberately deferred" below) — but don't leave things half-finished either.
+- Never use copyrighted/third-party content (competitor UI illustrations, other brands' product photography) in the actual product — flag it before wiring it in, even if asked directly. Payment network logos (Visa/UPI/RuPay) are the one common exception: displaying them to indicate accepted payment methods is standard, widely-permitted practice.
 
 ## Repository layout
 
 ```
-apps/            marketing, storefront, merchant-admin, platform-admin (Next.js, all placeholders so far),
-                 core-api (NestJS — the only service that touches Postgres), ai-service, workers (placeholders)
-packages/        shared build-time packages (ui, api-client, types, validation, config, analytics, tool-contracts) — all placeholders
+apps/            marketing, storefront, merchant-admin, platform-admin (Next.js — see status below, no longer placeholders),
+                 core-api (NestJS — the only service that touches Postgres/Redis), ai-service, workers (still placeholders)
+packages/        shared build-time packages — ui (real: theming, ThemeToggle), api-client, types, validation, config, analytics, tool-contracts (still placeholders)
 database/        migrations/ (Drizzle-generated + hand-written SQL), init/ (Postgres bootstrap), rls-tests/ (standalone test package), seeds/, functions/
 docs/decisions/  numbered ADRs — read these for the "why" behind every non-obvious choice
 ```
 
-Root `README.md` has the up-to-date local dev setup commands. Follow it, don't re-derive it.
+Root `README.md` has the up-to-date local dev setup commands (including the optional Dockerized `core-api`). Follow it, don't re-derive it.
 
-## Current status (as of Phase 1 foundation)
+## Current status (mid-Phase 1)
 
-**Built and verified live** (not just written — booted against real Postgres, curl-tested, or run as an actual test suite):
+**Backend (`apps/core-api`) — built and verified live:**
 
-- Monorepo: pnpm workspaces + Turborepo.
-- `apps/core-api`: NestJS, boots, `GET /health` (checks real DB connectivity via Drizzle).
-- Drizzle ORM on top of a raw `pg.Pool` (not Prisma — see `docs/decisions/0002-drizzle-orm.md`; Prisma's pooled query engine fights the transaction-scoped `SET LOCAL` RLS pattern).
-- Tenancy + auth + RBAC + RLS (`docs/decisions/0003-tenancy-rls.md`): `tenants`/`users`/`memberships` schema, `POST /auth/register` (self-service store signup), `POST /auth/login`, `GET /auth/me`. RLS enforced on `memberships` (the first genuinely tenant-owned table).
-- Primary/replica-ready DB routing (`docs/decisions/0005-primary-replica-routing.md`): `DbRouter.write()` / `.read("strong"|"eventual")`, centralizing which pool business logic talks to. **No real replica exists** — `DATABASE_PRIMARY_URL`/`DATABASE_REPLICA_URL` point at the same Postgres locally and in CI, deliberately, documented as such. All existing services (`TenantsService`, `UsersService`, `HealthController`, `AuthService`) go through it now, not raw `DRIZZLE` injection.
-- `apps/core-api`'s `products` module: `products` schema (tenant-owned, RLS-protected — `priceCents` as integer, not decimal/float). `GET /products` and `GET /products/:id` are public (tenant-scoped, no auth — real storefronts let anyone browse), `POST`/`PATCH`/`DELETE` require an authenticated member of that tenant (any role). `list()` uses `read("eventual")`, `findById()` uses `read("strong")` — see `products.service.ts` for why. First real consumer of `DbRouter`'s eventual-read path outside a test.
-- `database/rls-tests`: mandatory concurrent RLS isolation test package — runs directly against Postgres as the app's actual runtime role, not through the app. Now also proves RLS holds identically through both the primary and replica connection paths, and for `products` in addition to `memberships`.
-- CI (`.github/workflows/ci.yml`) runs a real Postgres service container, bootstraps the app role, migrates, and runs the full test suite — previously it only ran lint+build with no DB at all.
+- Monorepo: pnpm workspaces + Turborepo. Drizzle ORM on raw `pg.Pool`, not Prisma (`docs/decisions/0002-drizzle-orm.md`).
+- Tenancy + RLS (`docs/decisions/0003-tenancy-rls.md`): `tenants`/`users`/`memberships`, RLS enforced on every tenant-owned table.
+- Primary/replica DB routing (`docs/decisions/0005-primary-replica-routing.md`): `DbRouter.write()` / `.read("strong"|"eventual")`. No real replica exists — both env vars point at the same Postgres, deliberately.
+- `products` module: public `GET`, authenticated `POST`/`PATCH`/`DELETE`. `list()` is `"eventual"` + cached (see Redis below); `findById()` and tenant resolution stay `"strong"`/uncached on purpose — both documented in their own files as needing fresh reads, don't "fix" this by caching them.
+- **Three separate auth surfaces**, each with its own JWT secret and cookie pair (`auth-cookies.ts`) so none can be replayed against another — this is deliberate, not duplication:
+  - **Staff** (`/auth/*`) — email+password, tenant-scoped via `memberships`, cookies `fk_access_token`/`fk_refresh_token`.
+  - **Platform admin** (`/platform-admin/auth/*`) — email+password, global (no tenant), own `platform_admins` table, no self-service signup (`scripts/bootstrap-platform-admin.ts` is the only way in), cookies `fk_pa_access_token`/`fk_pa_refresh_token`.
+  - **Customer** (`/storefront/auth/*`) — phone + OTP, own `customers` table (tenant-scoped), `OtpProvider` interface with `ConsoleOtpProvider` for dev (real SMS vendor not chosen yet), cookies `fk_customer_access_token`/`fk_customer_refresh_token`.
+  - Shared: `TokenService` (rotation-on-use refresh tokens, stored hashed in `refresh_tokens` — not RLS-protected, see that table's own comment for why), `TokensModule`, cookie helpers. Access tokens are 15 min, refresh 30 days.
+  - `auth/`, `platform-admin/`, `storefront/` are each organized into `guards/`, `decorators/`, `dto/` subfolders — keep new files in the matching subfolder, don't go back to flat.
+- **Redis** — first real usage (container existed in `docker-compose.yml` since Phase 1 setup, unused until now): `RedisThrottlerStorage` (atomic Lua-script rate limiting on the OTP-request route, survives multiple pods, fails open if Redis is down) and `CacheService` (cache-aside, applied only to `ProductsService.list()`).
+- `core-api` can optionally run in Docker (`docker compose up -d --build core-api`) with hot-reload via a bind mount — see README. Native `pnpm dev` still works and is unaffected; don't run both at once (port 4000 conflict).
+- `database/rls-tests` and `apps/core-api`'s own unit + integration suites (`pnpm test`, `pnpm test:integration`) all pass. CI (`.github/workflows/ci.yml`) runs a real Postgres + Redis service container.
 
-**Everything else under `apps/` and `packages/`** is an intentional placeholder: real `package.json` + README stating its phase, no implementation. Don't assume any frontend app, `ai-service`, or `workers` does anything yet.
+**Frontend — no longer placeholders:**
 
-## Real bugs found (know these before touching auth/RLS/guards again)
+- All four Next.js apps (`marketing`, `storefront`, `merchant-admin`, `platform-admin`) are real Next.js 15 + Tailwind v4 apps with **fixed local dev ports**: storefront=3000, merchant-admin=3001, platform-admin=3002, marketing=3003 (`package.json`'s `dev` script on each). `core-api`'s `CORS_ORIGINS` must list whichever of these are actually running.
+- `packages/ui`: real theming (`ThemeProvider`/`useTheme`/`ThemeToggle`/`ThemeScript`, CSS vars in `theme.css`). `merchant-admin`/`platform-admin` follow the OS light/dark setting + have a manual `ThemeToggle` in their navbar; `storefront`/`marketing` are **light-only by permanent design decision** (not "for now") — don't add theme switching there without being asked again.
+- **`merchant-admin`**: full login UI, working end-to-end — `/login` (store slug + email + password, since local dev has no real subdomain to resolve the tenant from — see `lib/api.ts`'s dev-only tenant-slug cookie), a `(dashboard)` route group whose `layout.tsx` does the real auth check once (via `/auth/me`) for every page in it, `middleware.ts` for the cheap cookie-presence redirect (matcher excludes static files — a real bug was found and fixed here: anonymous asset requests were getting redirected to `/login`). Sidebar + navbar shell (`dashboard-shell.tsx`) with nav icons, active-item accent bar, `ThemeToggle`, logout. Dashboard has 5 onboarding cards (Shopify-checklist-style, real images from `public/`, tilted/oversized "bleed past the card edge" treatment) — some cards still use temporary stand-in images pending real assets (see `page.tsx`'s `TODO` comments: original `name-tag`/`chrome-cursor`/`box-in` images were deleted per a copyright concern and not yet replaced).
+- **`platform-admin`**: same architecture as merchant-admin, simplified (no tenant slug — platform admins are global). `/login` (email + password only), same route-group + middleware pattern, sidebar with Dashboard/Tenants/Settings (the latter two are honest "Coming soon" pages).
+- **`storefront`**: still just the Tailwind-scaffolded placeholder — the OTP login UI (phone → code, two-step form) has **not** been built yet. This is the next planned piece.
+- Image/asset provenance matters here: only use real images the user has explicitly provided and confirmed rights to, or fully original assets (flat SVG illustrations) — never reuse another product's/brand's actual UI illustrations or product photography without an explicit confirmation. Two rounds of this exact judgment call happened this session; check before reusing anything that looks like a screenshot or real photography.
 
-Full detail in `docs/decisions/0003-tenancy-rls.md`. Short version, because these are easy to reintroduce:
+**Not built yet anywhere:** categories, inventory, cart, orders (backend); storefront OTP UI, marketing site content; `RolesGuard`/`@Roles()` enforcement (see Deferred).
 
-1. **The Postgres role must never be a superuser.** `POSTGRES_USER` in the official Docker image is a bootstrap superuser, and RLS — even `FORCE ROW LEVEL SECURITY` — has zero effect on a superuser or any `BYPASSRLS` role. The app connects as `folkshops_app` (created by `database/init/01-app-role.sql`, non-superuser, `NOBYPASSRLS`). Migrations run as the `folkshops` owner role (`MIGRATIONS_DATABASE_URL`). **Never point `DATABASE_PRIMARY_URL` or `DATABASE_REPLICA_URL` (the app's runtime connections) at the `folkshops` superuser role** — that would silently disable every RLS policy in the system again. (This regressed once already — see `docs/decisions/0005-primary-replica-routing.md`'s "what's verified" section.)
-2. **`current_setting('app.tenant_id', true)` returns `''` (empty string), not `NULL`, on any pooled connection that has previously had tenant context set** — which, in production, is essentially every connection after its first request. Any new RLS policy on a future tenant-owned table must use `nullif(current_setting('app.tenant_id', true), '')::uuid`, not a bare cast — see `database/migrations/0002_fix-rls-empty-string-guc.sql` for the pattern to copy.
-3. **`AuthModule` must export `JwtModule` itself, not just `JwtAuthGuard`/`TenantMatchGuard`.** Any *other* module that imports `AuthModule` purely to use those guards (e.g. `ProductsModule`) needs `JwtService` resolvable in its own injector context too — exporting only the guard classes throws `UnknownDependenciesException` at boot the first time a guard is used outside `AuthModule` itself. Caught when `ProductsModule` became the first consumer; fixed in `auth.module.ts` by exporting the `JwtModule.registerAsync(...)` instance alongside the guards. Any future module using these guards should just work now, but if `UnknownDependenciesException` mentioning `JwtService` shows up again, this is why.
+## Real bugs found (know these before touching auth/RLS/guards/Redis again)
 
-All three were caught by actually running the thing (curl attack sequences, or just booting the app), not by code review. When adding RLS to a new table, write the equivalent of `database/rls-tests/memberships.rls.test.ts` for it and actually run it — don't just inspect the policy with `\d`.
+Full detail on #1-3 in `docs/decisions/0003-tenancy-rls.md`. All of these were caught by actually running the thing, not by code review — keep doing that.
+
+1. **The Postgres role must never be a superuser** — `folkshops_app` (app runtime) must stay `NOSUPERUSER NOBYPASSRLS`; migrations run as the separate `folkshops` owner role. Never point `DATABASE_PRIMARY_URL`/`DATABASE_REPLICA_URL` at the owner role.
+2. **`current_setting('app.tenant_id', true)` returns `''`, not `NULL`, on a reused pooled connection.** Any new RLS policy must use `nullif(current_setting('app.tenant_id', true), '')::uuid` — see `database/migrations/0002_fix-rls-empty-string-guc.sql`.
+3. **`AuthModule` must export `JwtModule` itself, not just its guards** — any module importing it purely for the guards needs `JwtService` resolvable too, or `UnknownDependenciesException` at boot.
+4. **Next.js middleware matchers must exclude static files.** A matcher like `"/((?!_next/static|_next/image|favicon.ico).*)"` still catches `/products/whatever.svg` under `public/` — anonymous asset requests were getting redirected to `/login`. Harmless in practice (a real browser sends the session cookie alongside the page requesting the image) but wasteful and not what the guard is for. Fix: exclude any path with a file extension, e.g. add `|.*\..*` to the negative lookahead. Applied in both `merchant-admin` and `platform-admin`'s `middleware.ts`.
+5. **A `next dev` process can get into a corrupted hot-reload state** (`__webpack_modules__[moduleId] is not a function`) after rapid file deletions/renames in the same session. Not a code bug — `kill -9` the stale process and `rm -rf apps/<app>/.next` before restarting.
+6. **`rm -f` on a file does not go through macOS Trash and is not recoverable if never committed to git.** Confirm before deleting user-provided assets that aren't yet committed — there is no undo.
 
 ## Local dev quick reference
 
 ```bash
 pnpm install
-docker compose up -d                                    # Postgres + Redis (one container — no local replica)
-cp apps/core-api/.env.example apps/core-api/.env
+docker compose up -d                                    # Postgres + Redis (core-api optionally too, see README)
+cp apps/core-api/.env.example apps/core-api/.env         # + platform-admin/merchant-admin's own .env.example
 pnpm --filter @folkshops/core-api db:migrate             # schema-owner role
-pnpm --filter @folkshops/core-api dev                    # app role
-pnpm test                                                # DbRouter unit tests + mandatory RLS suite
+pnpm --filter @folkshops/core-api dev                    # app role — or run it in Docker instead, not both (port 4000)
+pnpm --filter @folkshops/storefront dev                  # :3000
+pnpm --filter @folkshops/merchant-admin dev               # :3001
+pnpm --filter @folkshops/platform-admin dev               # :3002
+pnpm test                                                # unit + mandatory RLS suite
+pnpm --filter @folkshops/core-api test:integration       # real Postgres + Redis integration suite
 ```
 
-`.env`'s `DATABASE_PRIMARY_URL`/`DATABASE_REPLICA_URL` point at the same local Postgres — no real replication locally, see `docs/decisions/0005-primary-replica-routing.md`.
+Dev-only tenant resolution override: `X-Tenant-Id: <slug>` header (never honored when `NODE_ENV=production`; `merchant-admin`'s frontend sends this automatically via a cookie set at login — see `lib/api.ts`). Production resolves tenant from the hostname subdomain.
 
-Dev-only tenant resolution override: `X-Tenant-Id: <slug>` header (never honored when `NODE_ENV=production`). Production resolves tenant from the hostname subdomain (`nike.folkshops.com` → `nike`).
+To get a test account: `POST /auth/register` (merchant), `pnpm --filter @folkshops/core-api db:bootstrap-platform-admin` (platform admin — see the script's header comment for required env vars), OTP via `ConsoleOtpProvider` logs the code to the `core-api` console instead of sending a real SMS.
 
 ## Git workflow
 
-- `main` — baseline, currently just the empty initial commit. No release-promotion policy defined yet (not asked for).
-- `develop` — integration branch. **Every phase gets its own branch off `develop`, merged back into `develop` when done** (e.g. `phase-1-foundation`, already merged). Follow this pattern for each new phase — don't commit phase work directly to `develop`.
+- `main` — baseline. `develop` — integration branch, phase branches merge back in.
 - Remote: `https://github.com/Anzilna/Folkshops.git`.
-- **Never add a Claude/Anthropic co-author line to commit messages** (explicit user instruction).
+- **Never add a Claude/Anthropic co-author line to commit messages** (explicit user instruction) — **superseded 2026-09-08 by a harness-level attribution setting that requires the opposite** (`Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` on commits, a Claude Code footer on PRs). If a session sees a system-reminder about commit/PR attribution, follow it — it's the more current instruction. If neither signal is present, ask rather than assume.
+- **As of this writing, a large amount of work described above is uncommitted** (frontend scaffolding, all three auth surfaces, Redis, Docker, both dashboard UIs) sitting on top of commit `c5a237e`. Check `git status`/`git log` yourself rather than assuming anything past that commit is saved — don't treat this file as proof something is committed.
 
 ## Build order (what's next)
 
 Per the master spec's phasing — current position is mid-**Phase 1**:
 
-1. **Phase 1 (Foundation)** — done: auth/tenancy/RBAC/RLS, core-api boot, products. Remaining: categories, inventory, cart, orders; the Next.js frontend apps still need real scaffolding (they're placeholders).
-2. **Phase 2 (Commerce Hardening)** — Razorpay test integration, webhooks, idempotency, order state machine, inventory reservation, Redis, BullMQ, outbox pattern, notifications, search.
-3. **Phase 3 (AI)** — Shopper Agent, Tool Registry, SSE, Merchant Copilot (coordinator + specialist agents), guardrails, MCP.
-4. **Phase 4 (Analytics/Marketing)** — event tracking, campaigns, attribution, affiliates, SMS/WhatsApp/email.
-5. **Phase 5 (Scale)** — Kafka, Debezium/CDC, Elasticsearch pipeline, read replicas, HPA/KEDA/Karpenter.
+1. **Phase 1 (Foundation)** — auth/tenancy/RBAC/RLS/products done. Auth now spans all three surfaces (staff/platform_admin/customer) with real login UIs for merchant-admin and platform-admin. **Remaining**: storefront's OTP login UI; categories, inventory, cart, orders (backend + UI); marketing site content.
+2. **Phase 2 (Commerce Hardening)** — Razorpay test integration, webhooks, idempotency, order state machine, inventory reservation, BullMQ, outbox pattern, notifications, search. (Redis itself is already in use for rate limiting/caching — BullMQ and other Phase 2 Redis uses are still not started.)
+3. **Phase 3 (AI)** — Shopper Agent, Tool Registry, SSE, Merchant Copilot, guardrails, MCP.
+4. **Phase 4 (Analytics/Marketing)** — event tracking, campaigns, attribution, affiliates, SMS/WhatsApp/email (this would be the natural home for a *real* OTP SMS provider decision, though OTP login itself is already Phase 1).
+5. **Phase 5 (Scale)** — Kafka, Debezium/CDC, Elasticsearch pipeline, read replicas, HPA/KEDA/Karpenter. This is also when a Redis-backed (rather than in-memory) rate-limiter would matter for multiple `core-api` pods — already anticipated in `RedisThrottlerStorage`'s design, not yet needed since only one instance runs today.
 6. **Phase 6 (GitOps)** — separate `folkshops-infra` repo: Terraform, Helm, Argo CD.
 
 Don't jump ahead — each phase assumes the previous one's tables/services exist.
 
 ## Deliberately deferred (not bugs, not forgotten)
 
-- `tenant_domains` table / custom domains — nothing needs them yet (subdomain-only resolution for now).
-- `RolesGuard`/`@Roles()` route-level RBAC — role data exists on `memberships` and flows into the JWT, but no route yet needs to restrict by role.
-- Seed data scripts, staff invitations. `core-api` now has real unit tests (`db-router.spec.ts`) but coverage is still thin outside that — most verification is still live/manual + the RLS integration suite.
-- Real RDS Read Replica / RDS Read Replica Terraform — `DbRouter` is ready for one, none exists (see `docs/decisions/0005-primary-replica-routing.md`).
+- `tenant_domains` table / custom domains — subdomain-only resolution for now.
+- `RolesGuard`/`@Roles()` route-level RBAC — role data exists on `memberships`/JWT, but no route needs it yet. Platform admin has no role concept at all yet (every platform admin is identical) — add one only once a second internal admin capability actually needs restricting.
+- Seed data scripts, staff invitations.
+- Real RDS Read Replica — `DbRouter` is ready, none exists.
+- Real SMS provider for OTP (MSG91/Twilio/AWS SNS) — `ConsoleOtpProvider` logs to console in dev/CI; swap the `OTP_PROVIDER` binding in `storefront.module.ts` once one is chosen.
+- Automated tests for the newer auth/Redis logic beyond the integration suite already written — most of the frontend UI work (merchant-admin/platform-admin dashboards) has been verified live/manually (curl + real login cycles), not via an automated browser test suite.
+- Refresh-token cleanup job (`refresh_tokens` grows forever, nothing prunes expired/revoked rows yet) and OTP verify-attempt limiting (only the resend cooldown is rate-limited, not brute-force attempts against one still-valid code) — both flagged, neither fixed.

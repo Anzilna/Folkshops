@@ -20,7 +20,7 @@ Everything else under `apps/` and `packages/` is a placeholder (see each one's R
 
 - Node.js >= 20 (repo pins 24 via `.nvmrc`)
 - pnpm >= 9
-- Docker (for local Postgres/Redis)
+- Docker (for local Postgres/Redis — optionally `core-api` too, see below)
 
 ## Local development
 
@@ -50,6 +50,29 @@ pnpm test
 ```
 
 `.env.example` sets `DATABASE_PRIMARY_URL` and `DATABASE_REPLICA_URL` to the **same** local Postgres — there is no real replica locally or in CI, only the routing code. See `docs/decisions/0005-primary-replica-routing.md`.
+
+### Running core-api in Docker instead (optional)
+
+Steps 4–5 above can run inside Docker instead, if you'd rather not use a
+separate terminal for `core-api`:
+
+```bash
+docker compose up -d --build core-api
+```
+
+This builds and runs core-api alongside Postgres/Redis, applying pending
+migrations automatically on startup, and hot-reloads via a bind mount — no
+rebuild needed after editing source. `apps/core-api/.env` is not used here;
+the container gets its config from `docker-compose.yml`'s `environment:`
+block instead (using container-network hostnames like `postgres`/`redis`
+rather than `localhost`). Native `pnpm --filter @folkshops/core-api dev`
+keeps working exactly as before and is unaffected by this — don't run both
+at once, they'd fight over port 4000.
+
+The four Next.js frontends are **not** containerized — run them natively
+(`pnpm --filter <app-name> dev`), each on its fixed local port:
+`storefront`:3000, `merchant-admin`:3001, `platform-admin`:3002,
+`marketing`:3003.
 
 ## Repository layout
 
