@@ -1,6 +1,6 @@
 "use client";
 
-import type { InputHTMLAttributes, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type { InputHTMLAttributes, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 const FIELD_CLASSES =
   "h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50";
@@ -48,5 +48,36 @@ export function Label({ className = "", children, ...props }: LabelHTMLAttribute
     <label className={`text-xs font-medium text-muted-foreground ${className}`} {...props}>
       {children}
     </label>
+  );
+}
+
+export function Textarea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={`rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50 w-full ${className}`}
+      {...props}
+    />
+  );
+}
+
+/** Label + control + optional hint, stacked — the one layout every form
+ * field uses so spacing/typography never drifts between forms. */
+export function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
   );
 }

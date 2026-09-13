@@ -1,98 +1,95 @@
 "use client";
 
-import { Button, Input, Label, Modal } from "@folkshops/ui";
-import { useEffect, useState } from "react";
+import { Button, Card, Field, Input, Textarea } from "@folkshops/ui";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { errorMessage } from "../../../lib/hooks";
 
 export interface CategoryRow {
   id: string;
   name: string;
   slug: string;
   description: string | null;
+  createdAt: string;
 }
 
-export function CategoryForm({
-  open,
-  onClose,
-  onSaved,
-  category,
-  tenantSlug,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-  category: CategoryRow | null;
-  tenantSlug: string | null;
-}) {
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+export function CategoryForm({ category, tenantSlug }: { category: CategoryRow | null; tenantSlug: string | null }) {
+  const router = useRouter();
+  const [name, setName] = useState(category?.name ?? "");
+  const [slug, setSlug] = useState(category?.slug ?? "");
+  const [slugTouched, setSlugTouched] = useState(!!category);
+  const [description, setDescription] = useState(category?.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setName(category?.name ?? "");
-    setSlug(category?.slug ?? "");
-    setDescription(category?.description ?? "");
-    setError(null);
-  }, [open, category]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const body = { name, slug, description: description || undefined };
       const res = await apiFetch(
         category ? `/categories/${category.id}` : "/categories",
-        { method: category ? "PATCH" : "POST", body: JSON.stringify(body) },
+        { method: category ? "PATCH" : "POST", body: JSON.stringify({ name, slug, description: description || undefined }) },
         tenantSlug,
       );
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => null);
-        throw new Error(Array.isArray(errBody?.message) ? errBody.message.join(", ") : (errBody?.message ?? "Save failed"));
-      }
-      onSaved();
-      onClose();
+      if (!res.ok) throw new Error(await errorMessage(res, "Save failed"));
+      router.push("/categories");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
-    } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={category ? "Edit category" : "New category"}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="c-name">Name</Label>
-          <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} required />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="c-slug">Slug</Label>
-          <Input id="c-slug" value={slug} onChange={(e) => setSlug(e.target.value)} required pattern="[a-z0-9-]+" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="c-description">Description</Label>
-          <textarea
-            id="c-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+    <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-6">
+      <Card className="flex flex-col gap-5">
+        <Field label="Name" htmlFor="c-name">
+          <Input
+            id="c-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouched) setSlug(slugify(e.target.value));
+            }}
+            required
+            autoFocus={!category}
           />
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="mt-1 flex justify-end gap-2">
-          <Button variant="outline" type="button" onClick={onClose}>
+        </Field>
+        <Field label="Slug" htmlFor="c-slug" hint="Lowercase letters, numbers and hyphens.">
+          <Input
+            id="c-slug"
+            value={slug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value);
+            }}
+            required
+            pattern="[a-z0-9-]+"
+          />
+        </Field>
+        <Field label="Description" htmlFor="c-description">
+          <Textarea id="c-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+        </Field>
+      </Card>
+
+      {error && <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+      <div className="flex items-center justify-end gap-2">
+        <Link href="/categories">
+          <Button variant="outline" type="button">
             Cancel
           </Button>
-          <Button variant="primary" type="submit" disabled={submitting}>
-            {submitting ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+        </Link>
+        <Button variant="primary" type="submit" disabled={submitting}>
+          {submitting ? "Saving..." : category ? "Save changes" : "Create category"}
+        </Button>
+      </div>
+    </form>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { DataTable, type TableColumn } from "@folkshops/ui";
+import { DataTable, PageHeader, useBreadcrumbs, type TableColumn } from "@folkshops/ui";
 import { createExportFetcher, createTableFetcher } from "../../../lib/api";
 
 interface TenantRow {
@@ -21,6 +21,7 @@ const STATUS_FILTER_OPTIONS = [
 // reasoning as OrdersController: bulk-uploading tenants doesn't
 // correspond to anything a real platform admin does.
 export default function TenantsPage() {
+  useBreadcrumbs([{ label: "Tenants" }]);
   const fetcher = createTableFetcher<TenantRow>("/platform-admin/tenants");
   const exportFetcher = createExportFetcher("/platform-admin/tenants/export");
 
@@ -41,15 +42,12 @@ export default function TenantsPage() {
         </span>
       ),
     },
-    { key: "createdAt", header: "Created", sortable: true, render: (row) => new Date(row.createdAt).toLocaleDateString() },
+    { key: "createdAt", header: "Created", sortable: true, align: "right", render: (row) => new Date(row.createdAt).toLocaleDateString() },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-medium text-foreground">Tenants</h1>
-        <p className="text-sm text-muted-foreground">Every store on the platform. Stores are created by merchant self-registration.</p>
-      </div>
+    <>
+      <PageHeader title="Tenants" description="Every store on the platform. Stores are created by merchant self-registration." />
 
       <DataTable<TenantRow>
         columns={columns}
@@ -63,6 +61,6 @@ export default function TenantsPage() {
         defaultSortDir="desc"
         emptyMessage="No stores yet."
       />
-    </div>
+    </>
   );
 }

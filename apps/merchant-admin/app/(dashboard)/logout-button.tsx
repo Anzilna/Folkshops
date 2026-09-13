@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@folkshops/ui";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 
@@ -13,12 +14,8 @@ export function LogoutButton() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted"
-    >
+    <Button variant="outline" size="sm" onClick={onClick} className="w-full">
       Log out
-    </button>
+    </Button>
   );
 }

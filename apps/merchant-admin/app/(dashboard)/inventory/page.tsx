@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, DataTable, Input, type TableColumn } from "@folkshops/ui";
+import { Button, DataTable, Input, PageHeader, useBreadcrumbs, type TableColumn } from "@folkshops/ui";
 import { useEffect, useState } from "react";
 import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher, getStoredTenantSlug } from "../../../lib/api";
 
@@ -81,6 +81,7 @@ function QuantityCell({
 }
 
 export default function InventoryPage() {
+  useBreadcrumbs([{ label: "Inventory" }]);
   const [tenantSlug, setTenantSlug] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -98,19 +99,15 @@ export default function InventoryPage() {
       key: "quantity",
       header: "In stock",
       sortable: true,
-      render: (row) => <QuantityCell row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} />,
+      align: "right",
+      render: (row) => <span className="inline-flex justify-end"><QuantityCell row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /></span>,
     },
-    { key: "updatedAt", header: "Updated", sortable: true, render: (row) => new Date(row.updatedAt).toLocaleDateString() },
+    { key: "updatedAt", header: "Updated", sortable: true, align: "right", render: (row) => new Date(row.updatedAt).toLocaleDateString() },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-medium text-foreground">Inventory</h1>
-        <p className="text-sm text-muted-foreground">
-          Stock levels per product. A product appears here once a quantity has been set for it.
-        </p>
-      </div>
+    <>
+      <PageHeader title="Inventory" description="Stock per product — click a quantity to change it. A product appears here once a quantity has been set for it." />
 
       <DataTable<InventoryRow>
         columns={columns}
@@ -125,6 +122,6 @@ export default function InventoryPage() {
         emptyMessage="No stock set for any product yet — import a CSV or set a quantity from a product."
         refreshKey={refreshKey}
       />
-    </div>
+    </>
   );
 }

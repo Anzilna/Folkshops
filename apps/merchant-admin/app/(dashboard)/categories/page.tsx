@@ -1,54 +1,43 @@
 "use client";
 
-import { Button, DataTable, type TableColumn } from "@folkshops/ui";
-import { useEffect, useState } from "react";
-import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher, getStoredTenantSlug } from "../../../lib/api";
-import { CategoryForm, type CategoryRow } from "./category-form";
+import { Button, ConfirmDialog, DataTable, PageHeader, useBreadcrumbs, type TableColumn } from "@folkshops/ui";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher } from "../../../lib/api";
+import { useTenantSlug } from "../../../lib/hooks";
+import type { CategoryRow } from "./category-form";
 
 export default function CategoriesPage() {
-  const [tenantSlug, setTenantSlug] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<CategoryRow | null>(null);
+  useBreadcrumbs([{ label: "Categories" }]);
+  const router = useRouter();
+  const tenantSlug = useTenantSlug();
   const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    setTenantSlug(getStoredTenantSlug(document.cookie));
-  }, []);
+  const [pendingDelete, setPendingDelete] = useState<CategoryRow | null>(null);
 
   const fetcher = createTableFetcher<CategoryRow>("/categories");
   const exportFetcher = createExportFetcher("/categories");
   const importFetcher = createImportFetcher("/categories/import");
 
-  async function handleDelete(row: CategoryRow) {
-    if (!confirm(`Delete "${row.name}"? This can't be undone.`)) return;
-    const res = await apiFetch(`/categories/${row.id}`, { method: "DELETE" }, tenantSlug);
-    if (res.ok) setRefreshKey((k) => k + 1);
-    else alert("Delete failed");
-  }
-
   const columns: TableColumn<CategoryRow>[] = [
-    { key: "name", header: "Name", sortable: true },
-    { key: "slug", header: "Slug" },
-    { key: "description", header: "Description", render: (row) => row.description || "—" },
+    {
+      key: "name",
+      header: "Category",
+      sortable: true,
+      render: (row) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{row.name}</span>
+          <span className="text-xs text-muted-foreground">{row.slug}</span>
+        </div>
+      ),
+    },
+    { key: "description", header: "Description", render: (row) => <span className="text-muted-foreground">{row.description || "—"}</span> },
+    { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-medium text-foreground">Categories</h1>
-          <p className="text-sm text-muted-foreground">Organize your catalog.</p>
-        </div>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          New category
-        </Button>
-      </div>
+    <>
+      <PageHeader title="Categories" description="How your catalog is organized. Click a row to edit it." />
 
       <DataTable<CategoryRow>
         columns={columns}
@@ -58,36 +47,49 @@ export default function CategoriesPage() {
         exportFilename="categories.csv"
         importFetcher={importFetcher}
         searchPlaceholder="Search categories..."
-        defaultSortBy="createdAt"
-        defaultSortDir="desc"
-        emptyMessage="No categories yet."
-        refreshKey={refreshKey}
+        defaultSortBy="name"
+        onRowClick={(row) => router.push(`/categories/${row.id}`)}
+        toolbarActions={
+          <Link href="/categories/new">
+            <Button variant="primary" size="sm">
+              New category
+            </Button>
+          </Link>
+        }
         actions={(row) => (
           <div className="flex justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setEditing(row);
-                setFormOpen(true);
-              }}
-            >
-              Edit
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => handleDelete(row)} className="text-destructive hover:bg-destructive/10">
+            <Link href={`/categories/${row.id}`}>
+              <Button variant="ghost" size="sm">
+                Edit
+              </Button>
+            </Link>
+            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => setPendingDelete(row)}>
               Delete
             </Button>
           </div>
         )}
+        emptyMessage="No categories yet."
+        emptyAction={
+          <Link href="/categories/new">
+            <Button variant="primary" size="sm">
+              Create a category
+            </Button>
+          </Link>
+        }
+        refreshKey={refreshKey}
       />
 
-      <CategoryForm
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => setRefreshKey((k) => k + 1)}
-        category={editing}
-        tenantSlug={tenantSlug}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={async () => {
+          if (!pendingDelete) return;
+          const res = await apiFetch(`/categories/${pendingDelete.id}`, { method: "DELETE" }, tenantSlug);
+          if (res.ok) setRefreshKey((k) => k + 1);
+        }}
+        title={`Delete "${pendingDelete?.name}"?`}
+        description="Products in this category keep existing — they just become uncategorized."
       />
-    </div>
+    </>
   );
 }

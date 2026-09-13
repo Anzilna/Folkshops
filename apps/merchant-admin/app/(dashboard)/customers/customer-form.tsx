@@ -1,87 +1,75 @@
 "use client";
 
-import { Button, Input, Label, Modal } from "@folkshops/ui";
-import { useEffect, useState } from "react";
+import { Button, Card, Field, Input } from "@folkshops/ui";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { errorMessage } from "../../../lib/hooks";
 
 export interface CustomerRow {
   id: string;
   phone: string;
   name: string | null;
+  createdAt: string;
 }
 
-export function CustomerForm({
-  open,
-  onClose,
-  onSaved,
-  customer,
-  tenantSlug,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-  customer: CustomerRow | null;
-  tenantSlug: string | null;
-}) {
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+export function CustomerForm({ customer, tenantSlug }: { customer: CustomerRow | null; tenantSlug: string | null }) {
+  const router = useRouter();
+  const [phone, setPhone] = useState(customer?.phone ?? "");
+  const [name, setName] = useState(customer?.name ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setPhone(customer?.phone ?? "");
-    setName(customer?.name ?? "");
-    setError(null);
-  }, [open, customer]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      // phone is only sent on create — a customer's phone is their login
-      // identity (OTP goes to it), editing it isn't a plain field update.
+      // phone is only sent on create — it's the customer's OTP login
+      // identity, and changing it isn't a plain field edit (see core-api's
+      // UpdateCustomerDto).
       const body = customer ? { name: name || undefined } : { phone, name: name || undefined };
       const res = await apiFetch(
         customer ? `/customers/${customer.id}` : "/customers",
         { method: customer ? "PATCH" : "POST", body: JSON.stringify(body) },
         tenantSlug,
       );
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => null);
-        throw new Error(Array.isArray(errBody?.message) ? errBody.message.join(", ") : (errBody?.message ?? "Save failed"));
-      }
-      onSaved();
-      onClose();
+      if (!res.ok) throw new Error(await errorMessage(res, "Save failed"));
+      router.push("/customers");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
-    } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={customer ? "Edit customer" : "New customer"}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="cu-phone">Phone</Label>
-          <Input id="cu-phone" value={phone} onChange={(e) => setPhone(e.target.value)} required disabled={!!customer} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="cu-name">Name</Label>
-          <Input id="cu-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="mt-1 flex justify-end gap-2">
-          <Button variant="outline" type="button" onClick={onClose}>
+    <form onSubmit={onSubmit} className="flex max-w-xl flex-col gap-6">
+      <Card className="flex flex-col gap-5">
+        <Field
+          label="Phone"
+          htmlFor="cu-phone"
+          hint={customer ? "The phone number is the customer's login and can't be changed here." : "Include the country code, e.g. +91 98765 43210."}
+        >
+          <Input id="cu-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required disabled={!!customer} autoFocus={!customer} />
+        </Field>
+        <Field label="Name" htmlFor="cu-name">
+          <Input id="cu-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus={!!customer} />
+        </Field>
+      </Card>
+
+      {error && <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+      <div className="flex items-center justify-end gap-2">
+        <Link href="/customers">
+          <Button variant="outline" type="button">
             Cancel
           </Button>
-          <Button variant="primary" type="submit" disabled={submitting}>
-            {submitting ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+        </Link>
+        <Button variant="primary" type="submit" disabled={submitting}>
+          {submitting ? "Saving..." : customer ? "Save changes" : "Add customer"}
+        </Button>
+      </div>
+    </form>
   );
 }

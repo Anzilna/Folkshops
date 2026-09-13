@@ -2,7 +2,7 @@
   "name": "@folkshops/core-api",
   "version": "0.0.0",
   "private": true,
-  "description": "Core API — the only service that directly accesses PostgreSQL. Owns tenants, auth, products, orders, and all business logic.",
+  "description": "Core API \u2014 the only service that directly accesses PostgreSQL. Owns tenants, auth, products, orders, and all business logic.",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:bootstrap-app-role": "ts-node scripts/bootstrap-app-role.ts",
-    "db:bootstrap-platform-admin": "ts-node scripts/bootstrap-platform-admin.ts"
+    "db:bootstrap-platform-admin": "ts-node scripts/bootstrap-platform-admin.ts",
+    "db:seed-demo": "ts-node scripts/seed-demo.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

@@ -40,6 +40,112 @@
  * build time — every future component using bg-background/text-foreground/
  * etc. is theme-aware for free.
  */
+/*
+ * Motion for AdminShell (admin-shell.tsx) — plain CSS, no animation
+ * library, same rule merchant-admin's onboarding cards already follow.
+ * Everything here collapses to a static render under reduced-motion.
+ */
+@keyframes fk-nav-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes fk-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fk-nav-in {
+  animation: fk-nav-in 0.35s ease-out both;
+  animation-delay: calc(var(--fk-i, 0) * 35ms);
+}
+.fk-fade-in {
+  animation: fk-fade-in 0.25s ease-out both;
+}
+.fk-active-bar {
+  transform-origin: center;
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.2s ease-out;
+}
+.fk-brand-mark {
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in oklab, var(--accent) 70%, var(--muted-foreground)) 100%);
+}
+.fk-theme-icon {
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.fk-theme-toggle:hover .fk-theme-icon {
+  transform: rotate(-20deg);
+}
+@keyframes fk-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes fk-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes fk-dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.fk-pop {
+  animation: fk-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.fk-drop {
+  transform-origin: top right;
+  animation: fk-drop 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.fk-dot {
+  animation: fk-dot 1s ease-in-out infinite;
+}
+.fk-chat-fab {
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fk-nav-in,
+  .fk-fade-in,
+  .fk-pop,
+  .fk-drop,
+  .fk-dot {
+    animation: none;
+  }
+  .fk-active-bar,
+  .fk-theme-icon {
+    transition: none;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

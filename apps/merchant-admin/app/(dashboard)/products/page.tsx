@@ -1,9 +1,13 @@
 "use client";
 
-import { Button, DataTable, type TableColumn } from "@folkshops/ui";
-import { useEffect, useState } from "react";
-import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher, getStoredTenantSlug } from "../../../lib/api";
-import { ProductForm, type ProductRow } from "./product-form";
+import { Button, ConfirmDialog, DataTable, PageHeader, useBreadcrumbs, type TableColumn } from "@folkshops/ui";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher } from "../../../lib/api";
+import { formatPrice } from "../../../lib/format";
+import { useTenantSlug } from "../../../lib/hooks";
+import type { ProductRow } from "./product-form";
 
 const STATUS_FILTER_OPTIONS = [
   { value: "draft", label: "Draft" },
@@ -11,72 +15,53 @@ const STATUS_FILTER_OPTIONS = [
   { value: "archived", label: "Archived" },
 ];
 
-function formatPrice(cents: number): string {
-  return `₹${(cents / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+function StatusBadge({ status }: { status: ProductRow["status"] }) {
+  const cls =
+    status === "active"
+      ? "bg-success/15 text-success"
+      : status === "archived"
+        ? "bg-muted text-muted-foreground"
+        : "bg-accent/10 text-accent";
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${cls}`}>{status}</span>;
 }
 
 export default function ProductsPage() {
-  const [tenantSlug, setTenantSlug] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<ProductRow | null>(null);
+  useBreadcrumbs([{ label: "Products" }]);
+  const router = useRouter();
+  const tenantSlug = useTenantSlug();
   const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    setTenantSlug(getStoredTenantSlug(document.cookie));
-  }, []);
+  const [pendingDelete, setPendingDelete] = useState<ProductRow | null>(null);
+  const [pendingBulk, setPendingBulk] = useState<{ ids: string[]; clear: () => void } | null>(null);
 
   const fetcher = createTableFetcher<ProductRow>("/products");
   const exportFetcher = createExportFetcher("/products");
   const importFetcher = createImportFetcher("/products/import");
 
-  async function handleDelete(row: ProductRow) {
-    if (!confirm(`Delete "${row.name}"? This can't be undone.`)) return;
-    const res = await apiFetch(`/products/${row.id}`, { method: "DELETE" }, tenantSlug);
-    if (res.ok) setRefreshKey((k) => k + 1);
-    else alert("Delete failed");
+  async function deleteMany(ids: string[]) {
+    await Promise.all(ids.map((id) => apiFetch(`/products/${id}`, { method: "DELETE" }, tenantSlug)));
+    setRefreshKey((k) => k + 1);
   }
 
   const columns: TableColumn<ProductRow>[] = [
-    { key: "name", header: "Name", sortable: true },
-    { key: "slug", header: "Slug" },
-    { key: "priceCents", header: "Price", sortable: true, render: (row) => formatPrice(row.priceCents) },
     {
-      key: "status",
-      header: "Status",
+      key: "name",
+      header: "Product",
       sortable: true,
       render: (row) => (
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            row.status === "active"
-              ? "bg-success/15 text-success"
-              : row.status === "archived"
-                ? "bg-muted text-muted-foreground"
-                : "bg-accent/10 text-accent"
-          }`}
-        >
-          {row.status}
-        </span>
+        <div className="flex flex-col">
+          <span className="font-medium">{row.name}</span>
+          <span className="text-xs text-muted-foreground">{row.slug}</span>
+        </div>
       ),
     },
+    { key: "status", header: "Status", sortable: true, render: (row) => <StatusBadge status={row.status} /> },
+    { key: "priceCents", header: "Price", sortable: true, align: "right", render: (row) => <span className="tabular-nums">{formatPrice(row.priceCents)}</span> },
+    { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-medium text-foreground">Products</h1>
-          <p className="text-sm text-muted-foreground">Manage your catalog.</p>
-        </div>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          New product
-        </Button>
-      </div>
+    <>
+      <PageHeader title="Products" description="Everything in your catalog. Click a row to edit it." />
 
       <DataTable<ProductRow>
         columns={columns}
@@ -89,34 +74,62 @@ export default function ProductsPage() {
         searchPlaceholder="Search products..."
         defaultSortBy="createdAt"
         defaultSortDir="desc"
-        emptyMessage="No products yet — add your first one."
-        refreshKey={refreshKey}
+        selectable
+        onRowClick={(row) => router.push(`/products/${row.id}`)}
+        toolbarActions={
+          <Link href="/products/new">
+            <Button variant="primary" size="sm">
+              New product
+            </Button>
+          </Link>
+        }
+        bulkActions={(ids, clear) => (
+          <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => setPendingBulk({ ids, clear })}>
+            Delete selected
+          </Button>
+        )}
         actions={(row) => (
           <div className="flex justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setEditing(row);
-                setFormOpen(true);
-              }}
-            >
-              Edit
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => handleDelete(row)} className="text-destructive hover:bg-destructive/10">
+            <Link href={`/products/${row.id}`}>
+              <Button variant="ghost" size="sm">
+                Edit
+              </Button>
+            </Link>
+            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => setPendingDelete(row)}>
               Delete
             </Button>
           </div>
         )}
+        emptyMessage="No products yet."
+        emptyAction={
+          <Link href="/products/new">
+            <Button variant="primary" size="sm">
+              Add your first product
+            </Button>
+          </Link>
+        }
+        refreshKey={refreshKey}
       />
 
-      <ProductForm
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => setRefreshKey((k) => k + 1)}
-        product={editing}
-        tenantSlug={tenantSlug}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => deleteMany(pendingDelete ? [pendingDelete.id] : [])}
+        title={`Delete "${pendingDelete?.name}"?`}
+        description="This removes the product permanently. Orders that already include it keep their own snapshot."
       />
-    </div>
+      <ConfirmDialog
+        open={!!pendingBulk}
+        onClose={() => setPendingBulk(null)}
+        onConfirm={async () => {
+          if (!pendingBulk) return;
+          await deleteMany(pendingBulk.ids);
+          pendingBulk.clear();
+        }}
+        title={`Delete ${pendingBulk?.ids.length} products?`}
+        description="This removes them permanently."
+        confirmLabel="Delete all"
+      />
+    </>
   );
 }

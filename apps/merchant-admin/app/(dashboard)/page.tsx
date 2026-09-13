@@ -32,7 +32,7 @@ export default function DashboardPage() {
           cta="Add name"
           href="/settings"
           delayMs={150}
-          images={["/products/striped-shirt.png"]}
+          images={["/dashboard/name-tag.png"]}
         />
         <FixedImageCard
           title="Set up categories & inventory"
@@ -40,7 +40,7 @@ export default function DashboardPage() {
           cta="Set up"
           href="/categories"
           delayMs={225}
-          images={["/products/tracksuit.png"]}
+          images={["/dashboard/_.jpeg"]}
         />
         {/* TODO: swap for the actual box image once re-added — see conversation, the original was deleted. */}
         <FixedImageCard

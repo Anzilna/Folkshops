@@ -1,8 +1,11 @@
 "use client";
 
-import { Button, Input, Label, Modal, Select } from "@folkshops/ui";
+import { Button, Card, Field, Input, Select, Textarea } from "@folkshops/ui";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { errorMessage } from "../../../lib/hooks";
 
 export interface ProductRow {
   id: string;
@@ -12,11 +15,7 @@ export interface ProductRow {
   priceCents: number;
   status: "draft" | "active" | "archived";
   categoryId: string | null;
-}
-
-interface CategoryOption {
-  id: string;
-  name: string;
+  createdAt: string;
 }
 
 const STATUS_OPTIONS = [
@@ -25,44 +24,33 @@ const STATUS_OPTIONS = [
   { value: "archived", label: "Archived" },
 ];
 
-export function ProductForm({
-  open,
-  onClose,
-  onSaved,
-  product,
-  tenantSlug,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-  product: ProductRow | null;
-  tenantSlug: string | null;
-}) {
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
-  const [priceRupees, setPriceRupees] = useState("");
-  const [status, setStatus] = useState<string>("draft");
-  const [categoryId, setCategoryId] = useState("");
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+/** Shared by /products/new and /products/[id] — a page-level form, not a
+ * modal, so a half-filled product survives a refresh via the URL and the
+ * browser back button behaves the way people expect. */
+export function ProductForm({ product, tenantSlug }: { product: ProductRow | null; tenantSlug: string | null }) {
+  const router = useRouter();
+  const [name, setName] = useState(product?.name ?? "");
+  const [slug, setSlug] = useState(product?.slug ?? "");
+  const [slugTouched, setSlugTouched] = useState(!!product);
+  const [description, setDescription] = useState(product?.description ?? "");
+  const [priceRupees, setPriceRupees] = useState(product ? String(product.priceCents / 100) : "");
+  const [status, setStatus] = useState<string>(product?.status ?? "draft");
+  const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setName(product?.name ?? "");
-    setSlug(product?.slug ?? "");
-    setDescription(product?.description ?? "");
-    setPriceRupees(product ? String(product.priceCents / 100) : "");
-    setStatus(product?.status ?? "draft");
-    setCategoryId(product?.categoryId ?? "");
-    setError(null);
-
-    apiFetch("/categories?limit=100", {}, tenantSlug)
+    if (tenantSlug === null) return;
+    apiFetch("/categories?limit=100&sortBy=name", {}, tenantSlug)
       .then((res) => (res.ok ? res.json() : { data: [] }))
       .then((body) => setCategories(body.data ?? []))
       .catch(() => setCategories([]));
-  }, [open, product, tenantSlug]);
+  }, [tenantSlug]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,83 +60,84 @@ export function ProductForm({
       const priceCents = Math.round(Number(priceRupees) * 100);
       if (!Number.isFinite(priceCents) || priceCents < 0) throw new Error("Enter a valid price");
 
-      const body = {
-        name,
-        slug,
-        description: description || undefined,
-        priceCents,
-        status,
-        categoryId: categoryId || undefined,
-      };
-
+      const body = { name, slug, description: description || undefined, priceCents, status, categoryId: categoryId || undefined };
       const res = await apiFetch(
         product ? `/products/${product.id}` : "/products",
         { method: product ? "PATCH" : "POST", body: JSON.stringify(body) },
         tenantSlug,
       );
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => null);
-        throw new Error(Array.isArray(errBody?.message) ? errBody.message.join(", ") : (errBody?.message ?? "Save failed"));
-      }
-      onSaved();
-      onClose();
+      if (!res.ok) throw new Error(await errorMessage(res, "Save failed"));
+      router.push("/products");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
-    } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={product ? "Edit product" : "New product"}>
-      <form id="product-form" onSubmit={onSubmit} className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="p-name">Name</Label>
-          <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="p-slug">Slug</Label>
-          <Input id="p-slug" value={slug} onChange={(e) => setSlug(e.target.value)} required pattern="[a-z0-9-]+" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="p-price">Price (INR)</Label>
-          <Input id="p-price" type="number" step="0.01" min="0" value={priceRupees} onChange={(e) => setPriceRupees(e.target.value)} required />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="p-status">Status</Label>
-          <Select id="p-status" value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="p-category">Category</Label>
-          <Select
-            id="p-category"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            options={categories.map((c) => ({ value: c.id, label: c.name }))}
-            placeholder="No category"
+    <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <Card className="flex flex-col gap-5">
+        <Field label="Name" htmlFor="p-name">
+          <Input
+            id="p-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouched) setSlug(slugify(e.target.value));
+            }}
+            required
+            autoFocus={!product}
           />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="p-description">Description</Label>
-          <textarea
-            id="p-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+        </Field>
+        <Field label="Slug" htmlFor="p-slug" hint="Lowercase letters, numbers and hyphens. Part of the product's URL.">
+          <Input
+            id="p-slug"
+            value={slug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value);
+            }}
+            required
+            pattern="[a-z0-9-]+"
           />
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        </Field>
+        <Field label="Description" htmlFor="p-description">
+          <Textarea id="p-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={5} />
+        </Field>
+      </Card>
 
-        <div className="mt-1 flex justify-end gap-2">
-          <Button variant="outline" type="button" onClick={onClose}>
-            Cancel
-          </Button>
+      <div className="flex flex-col gap-6">
+        <Card className="flex flex-col gap-5">
+          <Field label="Price (INR)" htmlFor="p-price">
+            <Input id="p-price" type="number" step="0.01" min="0" inputMode="decimal" value={priceRupees} onChange={(e) => setPriceRupees(e.target.value)} required />
+          </Field>
+          <Field label="Status" htmlFor="p-status">
+            <Select id="p-status" value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS} />
+          </Field>
+          <Field label="Category" htmlFor="p-category">
+            <Select
+              id="p-category"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              placeholder="No category"
+            />
+          </Field>
+        </Card>
+
+        {error && <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+        <div className="flex items-center justify-end gap-2">
+          <Link href="/products">
+            <Button variant="outline" type="button">
+              Cancel
+            </Button>
+          </Link>
           <Button variant="primary" type="submit" disabled={submitting}>
-            {submitting ? "Saving..." : "Save"}
+            {submitting ? "Saving..." : product ? "Save changes" : "Create product"}
           </Button>
         </div>
-      </form>
-    </Modal>
+      </div>
+    </form>
   );
 }
