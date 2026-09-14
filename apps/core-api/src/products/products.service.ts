@@ -34,6 +34,7 @@ const EXPORT_COLUMNS: CsvColumn<typeof products.$inferSelect>[] = [
   { key: "priceCents", header: "priceCents" },
   { key: "status", header: "status" },
   { key: "categoryId", header: "categoryId" },
+  { key: "imageUrl", header: "imageUrl" },
 ];
 
 @Injectable()

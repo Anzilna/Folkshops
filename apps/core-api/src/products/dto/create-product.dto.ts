@@ -19,6 +19,10 @@ export class CreateProductDto {
   @IsUUID()
   categoryId?: string;
 
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
   /** Smallest currency unit (paise for INR) — see schema/products.ts. */
   @IsInt()
   @Min(0)

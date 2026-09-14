@@ -25,7 +25,20 @@ export const products = pgTable(
     categoryId: uuid("category_id").references(() => categories.id),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    // Opaque to the backend — plain text for products created before this
+    // column existed (seed data, CSV imports, which never go through the
+    // editor) or Editor.js's JSON OutputData (stringified) for anything
+    // saved through merchant-admin's product form. Never validated or
+    // parsed server-side; every reader (storefront, merchant-admin) must
+    // fall back to rendering it as plain text if it isn't valid Editor.js
+    // JSON — see storefront's lib/editorjs-render.tsx.
     description: text("description"),
+    // The full, browser-loadable URL returned by S3Service.upload() —
+    // MinIO's published host port in dev, a real S3/CDN URL in prod.
+    // Stored absolute (not a bucket key) so a frontend never needs to know
+    // which environment's base URL to prefix. Nullable: most products
+    // won't have one until someone uploads one via the product form.
+    imageUrl: text("image_url"),
     priceCents: integer("price_cents").notNull(),
     status: productStatusEnum("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

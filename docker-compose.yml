@@ -32,6 +32,49 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible local dev target for product image uploads — same
+  # swap-seam pattern as ConsoleOtpProvider: real S3 SDK calls
+  # (@aws-sdk/client-s3) against a local backend in dev, a real AWS bucket
+  # in prod, purely by changing AWS_S3_ENDPOINT/credentials in env. No
+  # code branches on "am I local or real S3" — the SDK doesn't care.
+  minio:
+    image: minio/minio:latest
+    container_name: folkshops-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: folkshops
+      MINIO_ROOT_PASSWORD: folkshops123
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console (http://localhost:9001)
+    volumes:
+      - folkshops-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates the bucket and makes it anonymously downloadable
+  # (so <img src> works directly against MinIO, the way a real public S3
+  # bucket or CDN in front of one would) — then exits. Runs every
+  # `docker compose up`; idempotent (mb -p, anonymous set both no-op if
+  # already done).
+  minio-init:
+    image: minio/mc:latest
+    container_name: folkshops-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 folkshops folkshops123 &&
+      mc mb -p local/folkshops-uploads &&
+      mc anonymous set download local/folkshops-uploads
+      "
+    restart: "no"
+
   # Optional — `pnpm --filter @folkshops/core-api dev` on the host works
   # exactly as before and is unaffected by this. This exists purely so
   # `docker compose up -d` can also cover the backend for anyone who'd
@@ -49,6 +92,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: development
       PORT: 4000
@@ -63,6 +108,17 @@ services:
       PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
       CUSTOMER_JWT_SECRET: dev-only-change-me-three
       CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003
+      # AWS_S3_ENDPOINT is what makes this MinIO instead of real AWS — see
+      # S3Service's own comment. AWS_S3_PUBLIC_URL is what browsers use
+      # (localhost:9000, since the container-network "minio" hostname
+      # means nothing outside Docker); unset both in prod for real S3.
+      AWS_S3_BUCKET: folkshops-uploads
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: folkshops
+      AWS_SECRET_ACCESS_KEY: folkshops123
+      AWS_S3_ENDPOINT: http://minio:9000
+      AWS_S3_PUBLIC_URL: http://localhost:9000
+      AWS_S3_FORCE_PATH_STYLE: "true"
     ports:
       - "4000:4000"
     volumes:
@@ -77,5 +133,6 @@ services:
 volumes:
   folkshops-postgres-data:
   folkshops-redis-data:
+  folkshops-minio-data:
   core-api-root-node-modules:
   core-api-app-node-modules:

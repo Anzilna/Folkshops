@@ -19,3 +19,5 @@ pnpm-debug.log*
 !.vscode/extensions.json
 
 *.tsbuildinfo
+apps/core-api/uploads/
+.pnpm-store/
