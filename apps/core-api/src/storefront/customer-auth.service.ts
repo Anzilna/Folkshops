@@ -132,6 +132,30 @@ export class CustomerAuthService {
     await this.tokens.revokeToken(rawRefreshToken);
   }
 
+  /** The customer's own DB row — CustomerJwtPayload (the JWT's claims)
+   * deliberately only carries sub/tenantId/phone, so /me needs this to
+   * show anything that can change without minting a new token, like name. */
+  async findById(tenantId: string, customerId: string) {
+    return this.dbRouter.read("strong", (db) =>
+      withTenantContext(db, tenantId, async (tx) => {
+        const [customer] = await tx.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+        return customer ?? null;
+      }),
+    );
+  }
+
+  /** Self-service — a customer editing their own display name. Phone isn't
+   * editable here: it's the OTP login identity, same reasoning as
+   * merchant-admin's staff-side UpdateCustomerDto not allowing it either. */
+  async updateName(tenantId: string, customerId: string, name: string) {
+    const [customer] = await this.dbRouter.write((db) =>
+      withTenantContext(db, tenantId, async (tx) =>
+        tx.update(customers).set({ name, updatedAt: new Date() }).where(eq(customers.id, customerId)).returning(),
+      ),
+    );
+    return customer ?? null;
+  }
+
   private async issueTokens(customer: { id: string; tenantId: string; phone: string }): Promise<TokenPair> {
     const payload: CustomerJwtPayload = { sub: customer.id, tenantId: customer.tenantId, phone: customer.phone };
     const accessToken = this.jwt.sign(payload);

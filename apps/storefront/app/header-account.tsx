@@ -54,6 +54,9 @@ export function HeaderAccount({ signedIn }: { signedIn: boolean }) {
 
   return (
     <>
+      <Link href="/account" className={linkCls}>
+        Account
+      </Link>
       <Link href="/orders" className={linkCls}>
         Orders
       </Link>
