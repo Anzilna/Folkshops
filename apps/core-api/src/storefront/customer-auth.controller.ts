@@ -33,8 +33,8 @@ export class CustomerAuthController {
   @Post("otp/request")
   async requestOtp(@Body() dto: RequestOtpDto, @CurrentTenant() tenant?: TenantContext) {
     if (!tenant) throw new BadRequestException("No store resolved for this request");
-    await this.auth.requestOtp(tenant.id, dto.phone);
-    return { ok: true };
+    const { devCode } = await this.auth.requestOtp(tenant.id, dto.phone);
+    return { ok: true, devCode };
   }
 
   @Post("otp/verify")

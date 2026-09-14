@@ -21,6 +21,7 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const [devCode, setDevCode] = useState<string | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,6 +47,14 @@ export function LoginForm() {
       const normalized = phone.replace(/[\s-]/g, "");
       const res = await apiFetch("/storefront/auth/otp/request", { method: "POST", body: JSON.stringify({ phone: normalized }) });
       if (!res.ok) throw new Error(await readError(res, res.status === 429 ? "Too many attempts — wait a minute." : "Couldn't send a code"));
+      // devCode only exists outside production (see CustomerAuthService.requestOtp)
+      // — there's no real SMS vendor chosen yet, so this is the fast path
+      // instead of tailing core-api's log for every test login.
+      const { devCode: code }: { devCode?: string } = await res.json().catch(() => ({}));
+      if (code) {
+        console.log(`[DEV OTP] code for ${normalized}: ${code}`);
+        setDevCode(code);
+      }
       setPhone(normalized);
       setStep("code");
       setResendIn(RESEND_SECONDS);
@@ -104,7 +113,7 @@ export function LoginForm() {
           className="h-12 text-center text-2xl tracking-[0.4em]"
         />
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <button type="button" onClick={() => setStep("phone")} className="underline underline-offset-4 hover:text-foreground">
+          <button type="button" onClick={() => { setStep("phone"); setDevCode(null); }} className="underline underline-offset-4 hover:text-foreground">
             Change number
           </button>
           {resendIn > 0 ? (
@@ -115,6 +124,11 @@ export function LoginForm() {
             </button>
           )}
         </div>
+        {devCode && (
+          <p className="fk-fade-in rounded-lg bg-muted/60 px-3 py-2 text-center text-xs text-muted-foreground">
+            Dev mode — no SMS sent. Your code: <span className="font-mono font-medium text-foreground">{devCode}</span>
+          </p>
+        )}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button variant="primary" type="submit" disabled={busy || code.length !== 6} className="h-11 rounded-full">

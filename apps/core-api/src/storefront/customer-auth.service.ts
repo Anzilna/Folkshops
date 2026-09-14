@@ -46,8 +46,17 @@ export class CustomerAuthService {
    * CustomerAuthController) — the guard limits requests per IP, this stops
    * spamming SMS to one specific number from many IPs/devices.
    */
-  async requestOtp(tenantId: string, phone: string): Promise<void> {
-    await this.dbRouter.write((db) =>
+  /**
+   * Returns the code itself only outside production — ConsoleOtpProvider
+   * already prints it in plaintext to the server log in dev (there's no
+   * real SMS vendor chosen yet, see that file), so handing it back here
+   * too isn't a new exposure, just a more convenient one: the storefront
+   * can show/console.log it directly instead of someone tailing core-api's
+   * log for every test login. NODE_ENV-gated the same way the dev-only
+   * X-Tenant-Id header is — never returned when NODE_ENV=production.
+   */
+  async requestOtp(tenantId: string, phone: string): Promise<{ devCode?: string }> {
+    return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [recent] = await tx
           .select()
@@ -72,6 +81,7 @@ export class CustomerAuthService {
           expiresAt: new Date(Date.now() + OTP_TTL_MS),
         });
         await this.otp.send(phone, code);
+        return { devCode: process.env.NODE_ENV !== "production" ? code : undefined };
       }),
     );
   }
