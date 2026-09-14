@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
  * server-side and bounced to /login from there.
  */
 const ACCESS_TOKEN_COOKIE = "fk_access_token";
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/register"];
 
 export function middleware(req: NextRequest) {
   const isPublic = PUBLIC_PATHS.some((path) => req.nextUrl.pathname.startsWith(path));

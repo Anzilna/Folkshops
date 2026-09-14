@@ -1,7 +1,18 @@
 @import "tailwindcss";
 @import "@folkshops/ui/css";
+/* Tailwind v4 skips node_modules, and @folkshops/ui lives there via the
+ * pnpm workspace symlink — without this the shared classes never
+ * generate (CLAUDE.md bug #9). */
+@source "../../../packages/ui/src";
 
+/* Light-only by permanent design decision, same as storefront — no .dark handling here. */
 body {
   background-color: var(--background);
   color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mk-display {
+  letter-spacing: -0.02em;
+  line-height: 1.05;
 }
