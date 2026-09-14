@@ -1,11 +1,11 @@
 "use client";
 
-import type { InputHTMLAttributes, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { ComponentPropsWithRef, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 const FIELD_CLASSES =
   "h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50";
 
-export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className = "", ...props }: ComponentPropsWithRef<"input">) {
   return <input className={`${FIELD_CLASSES} w-full ${className}`} {...props} />;
 }
 
@@ -33,7 +33,7 @@ export function Select({ options, placeholder, className = "", ...props }: Selec
   );
 }
 
-export function Checkbox({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Checkbox({ className = "", ...props }: ComponentPropsWithRef<"input">) {
   return (
     <input
       type="checkbox"

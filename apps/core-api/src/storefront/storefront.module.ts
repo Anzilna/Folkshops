@@ -8,6 +8,7 @@ import { CustomerAuthService } from "./customer-auth.service";
 import { CustomerJwtAuthGuard } from "./guards/customer-jwt-auth.guard";
 import { CustomerTenantMatchGuard } from "./guards/customer-tenant-match.guard";
 import { OTP_PROVIDER } from "./otp-provider";
+import { StoreController } from "./store.controller";
 
 // A distinct secret from both staff and platform_admin — see
 // CustomerJwtAuthGuard for why this boundary matters most of the three.
@@ -24,7 +25,7 @@ const jwtModule = JwtModule.registerAsync({
   // ThrottlerModule itself is registered once, globally, in AppModule —
   // not here. This module only uses the guard on one route.
   imports: [jwtModule, TokensModule],
-  controllers: [CustomerAuthController],
+  controllers: [CustomerAuthController, StoreController],
   providers: [
     CustomerAuthService,
     CustomerJwtAuthGuard,
