@@ -19,11 +19,16 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000
  * (RFC 6761), so this is a real way to test multiple stores against one
  * running dev server, not a toy.
  *
- * Falls back to NEXT_PUBLIC_STORE_SLUG only for a bare hostname with no
- * subdomain at all (plain `localhost:3003`) — keeps the simple
- * single-store dev workflow from earlier this session working unchanged.
+ * Falls back to NEXT_PUBLIC_STORE_SLUG for a bare hostname with no
+ * subdomain (plain `localhost:3000`) — but **only outside production**,
+ * mirroring core-api's own TenantResolverMiddleware (`X-Tenant-Id` is
+ * dev-only there too, see rule 9). In production a bare/apex hostname
+ * genuinely has no store — `folkshops.com` itself is the marketing site,
+ * not a tenant — so this returns `null` and the layout renders a "store
+ * not found" page instead of silently defaulting to whichever slug the
+ * env var happens to hold.
  */
-function resolveStoreSlug(host: string | null | undefined): string {
+function resolveStoreSlug(host: string | null | undefined): string | null {
   if (host) {
     const hostname = host.split(":")[0].toLowerCase();
     if (hostname.endsWith(".localhost")) {
@@ -34,7 +39,8 @@ function resolveStoreSlug(host: string | null | undefined): string {
       if (parts.length > 2 && parts[0] !== "www") return parts[0];
     }
   }
-  return process.env.NEXT_PUBLIC_STORE_SLUG ?? "demo";
+  if (process.env.NODE_ENV !== "production") return process.env.NEXT_PUBLIC_STORE_SLUG ?? "demo";
+  return null;
 }
 
 export const CUSTOMER_ACCESS_TOKEN_COOKIE = "fk_customer_access_token";
@@ -47,9 +53,9 @@ export function notifyCartChanged() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CART_CHANGED_EVENT));
 }
 
-function withStore(slug: string, init: RequestInit = {}): RequestInit {
+function withStore(slug: string | null, init: RequestInit = {}): RequestInit {
   const headers = new Headers(init.headers);
-  headers.set("X-Tenant-Id", slug);
+  if (slug) headers.set("X-Tenant-Id", slug);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   return { ...init, headers };
 }

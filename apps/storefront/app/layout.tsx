@@ -3,29 +3,47 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { serverFetch } from "../lib/api";
 import { HeaderAccount } from "./header-account";
+import { StoreNotFound } from "./store-not-found";
 import "./globals.css";
 
 // Light-only by design (unlike merchant-admin/platform-admin, which follow
 // the OS light/dark setting) — not wired to @folkshops/ui's ThemeScript/
 // ThemeProvider.
 
-async function loadStore(): Promise<{ name: string; slug: string }> {
+// null means no tenant resolved for this hostname (bare/apex domain,
+// unrecognized subdomain, or core-api unreachable) — distinct from a real
+// store, so callers must render StoreNotFound instead of falling back to
+// placeholder branding. See lib/api.ts's resolveStoreSlug for why a bare
+// hostname only ever resolves to a store outside production.
+async function loadStore(): Promise<{ name: string; slug: string } | null> {
   try {
     const res = await serverFetch("/storefront/store");
     if (res.ok) return res.json();
   } catch {
-    /* core-api down — fall through to the placeholder name */
+    /* core-api down */
   }
-  return { name: "Folkshops", slug: "" };
+  return null;
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const store = await loadStore();
+  if (!store) return { title: "Store not found — Folkshops" };
   return { title: store.name, description: `Shop ${store.name}` };
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [store, cookieStore] = await Promise.all([loadStore(), cookies()]);
+
+  if (!store) {
+    return (
+      <html lang="en">
+        <body className="min-h-screen">
+          <StoreNotFound />
+        </body>
+      </html>
+    );
+  }
+
   const signedIn = cookieStore.has("fk_customer_access_token");
 
   return (
