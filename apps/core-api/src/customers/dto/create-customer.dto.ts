@@ -1,4 +1,5 @@
 import { IsOptional, IsString, MinLength } from "class-validator";
+import { IsActiveField } from "../../common/dto/is-active.decorator";
 
 // Customers are normally created only by OTP verification (see
 // customer-auth.service.ts) — no password, no self-service form. This DTO
@@ -13,4 +14,7 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsActiveField()
+  isActive?: boolean;
 }

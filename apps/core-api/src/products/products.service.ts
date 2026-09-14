@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, count, eq, ilike, SQL } from "drizzle-orm";
+import { and, asc, count, eq, ilike, isNull, SQL } from "drizzle-orm";
 import { bulkImport, BulkImportResult } from "../common/bulk-import.util";
 import { CsvColumn, toCsv } from "../common/csv.util";
 import { offsetFor, paginatedResult, PaginatedResult, resolveSort } from "../common/pagination.util";
@@ -20,9 +20,12 @@ const SORT_COLUMNS = {
 } as const;
 
 function buildFilters(tenantId: string, query: QueryProductsDto): SQL | undefined {
-  const clauses = [eq(products.tenantId, tenantId)];
+  // isNull(deletedAt) always applies — a soft-deleted row must behave as
+  // gone for every normal read path, no caller opts back into seeing it.
+  const clauses = [eq(products.tenantId, tenantId), isNull(products.deletedAt)];
   if (query.status) clauses.push(eq(products.status, query.status));
   if (query.categoryId) clauses.push(eq(products.categoryId, query.categoryId));
+  if (query.isActive !== undefined) clauses.push(eq(products.isActive, query.isActive));
   if (query.search) clauses.push(ilike(products.name, `%${query.search}%`));
   return and(...clauses);
 }
@@ -34,6 +37,7 @@ const EXPORT_COLUMNS: CsvColumn<typeof products.$inferSelect>[] = [
   { key: "description", header: "description" },
   { key: "priceCents", header: "priceCents" },
   { key: "status", header: "status" },
+  { key: "isActive", header: "isActive" },
   { key: "categoryId", header: "categoryId" },
   { key: "imageUrl", header: "imageUrl" },
 ];
@@ -127,7 +131,11 @@ export class ProductsService {
   async findById(tenantId: string, id: string) {
     return this.dbRouter.read("strong", (db) =>
       withTenantContext(db, tenantId, async (tx) => {
-        const [product] = await tx.select().from(products).where(eq(products.id, id)).limit(1);
+        const [product] = await tx
+          .select()
+          .from(products)
+          .where(and(eq(products.id, id), isNull(products.deletedAt)))
+          .limit(1);
         if (!product) return null;
         const gallery = await tx.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.position));
         return { ...product, images: gallery.map((g) => g.url) };
@@ -142,7 +150,7 @@ export class ProductsService {
         const [product] = await tx
           .update(products)
           .set({ ...productInput, updatedAt: new Date() })
-          .where(eq(products.id, id))
+          .where(and(eq(products.id, id), isNull(products.deletedAt)))
           .returning();
         if (!product) return null;
         if (images) await replaceGallery(tx, tenantId, id, images);
@@ -152,10 +160,22 @@ export class ProductsService {
     );
   }
 
+  /** Soft delete — sets deletedAt rather than removing the row, so an
+   * order's own line-item snapshot never dangles on a hard-deleted
+   * product, and the action is reversible at the database level even
+   * though there's no restore endpoint today. Every read path filters
+   * deletedAt IS NULL (see buildFilters/findById), so a soft-deleted
+   * product behaves as gone through the API. Idempotent-safe: deleting an
+   * already-deleted (or nonexistent) id matches zero rows and returns
+   * null, same as a genuine 404, rather than erroring. */
   async delete(tenantId: string, id: string) {
     return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
-        const [product] = await tx.delete(products).where(eq(products.id, id)).returning();
+        const [product] = await tx
+          .update(products)
+          .set({ deletedAt: new Date() })
+          .where(and(eq(products.id, id), isNull(products.deletedAt)))
+          .returning();
         return product ?? null;
       }),
     );

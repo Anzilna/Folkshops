@@ -1,4 +1,5 @@
 import { IsOptional, IsString, MinLength } from "class-validator";
+import { IsActiveField } from "../../common/dto/is-active.decorator";
 
 // phone is intentionally not editable here — it's the customer's login
 // identity (OTP goes to it); changing it is a re-verification flow this
@@ -8,4 +9,7 @@ export class UpdateCustomerDto {
   @IsString()
   @MinLength(1)
   name?: string;
+
+  @IsActiveField()
+  isActive?: boolean;
 }

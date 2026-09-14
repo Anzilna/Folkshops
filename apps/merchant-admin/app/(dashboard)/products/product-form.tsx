@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Field, Input, Select } from "@folkshops/ui";
+import { Button, Card, Checkbox, Field, Input, Select } from "@folkshops/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -19,6 +19,7 @@ export interface ProductRow {
   images: string[];
   priceCents: number;
   status: "draft" | "active" | "archived";
+  isActive: boolean;
   categoryId: string | null;
   createdAt: string;
 }
@@ -50,6 +51,7 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
   const [images, setImages] = useState<string[]>(product?.images ?? []);
   const [priceRupees, setPriceRupees] = useState(product ? String(product.priceCents / 100) : "");
   const [status, setStatus] = useState<string>(product?.status ?? "draft");
+  const [isActive, setIsActive] = useState(product?.isActive ?? true);
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
         images,
         priceCents,
         status,
+        isActive,
         categoryId: categoryId || undefined,
       };
       const res = await apiFetch(
@@ -152,6 +155,10 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
           <Field label="Status" htmlFor="p-status">
             <Select id="p-status" value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS} />
           </Field>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+            Active (staff-only — separate from the status above; turn off to pull it from action without changing its publish state)
+          </label>
           <Field label="Category" htmlFor="p-category">
             <Select
               id="p-category"

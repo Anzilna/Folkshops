@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, count, eq, ilike, SQL } from "drizzle-orm";
+import { and, count, eq, ilike, isNull, SQL } from "drizzle-orm";
 import { bulkImport, BulkImportResult } from "../common/bulk-import.util";
 import { CsvColumn, toCsv } from "../common/csv.util";
 import { offsetFor, paginatedResult, PaginatedResult, resolveSort } from "../common/pagination.util";
@@ -17,7 +17,8 @@ const SORT_COLUMNS = {
 } as const;
 
 function buildFilters(tenantId: string, query: QueryCategoriesDto): SQL | undefined {
-  const clauses = [eq(categories.tenantId, tenantId)];
+  const clauses = [eq(categories.tenantId, tenantId), isNull(categories.deletedAt)];
+  if (query.isActive !== undefined) clauses.push(eq(categories.isActive, query.isActive));
   if (query.search) clauses.push(ilike(categories.name, `%${query.search}%`));
   return and(...clauses);
 }
@@ -27,6 +28,7 @@ const EXPORT_COLUMNS: CsvColumn<typeof categories.$inferSelect>[] = [
   { key: "name", header: "name" },
   { key: "slug", header: "slug" },
   { key: "description", header: "description" },
+  { key: "isActive", header: "isActive" },
 ];
 
 /** Same shape as ProductsService throughout — see that file's comments
@@ -82,7 +84,11 @@ export class CategoriesService {
   async findById(tenantId: string, id: string) {
     return this.dbRouter.read("strong", (db) =>
       withTenantContext(db, tenantId, async (tx) => {
-        const [category] = await tx.select().from(categories).where(eq(categories.id, id)).limit(1);
+        const [category] = await tx
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, id), isNull(categories.deletedAt)))
+          .limit(1);
         return category ?? null;
       }),
     );
@@ -94,17 +100,22 @@ export class CategoriesService {
         const [category] = await tx
           .update(categories)
           .set({ ...input, updatedAt: new Date() })
-          .where(eq(categories.id, id))
+          .where(and(eq(categories.id, id), isNull(categories.deletedAt)))
           .returning();
         return category ?? null;
       }),
     );
   }
 
+  /** Soft delete — see ProductsService.delete()'s comment for why. */
   async delete(tenantId: string, id: string) {
     return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
-        const [category] = await tx.delete(categories).where(eq(categories.id, id)).returning();
+        const [category] = await tx
+          .update(categories)
+          .set({ deletedAt: new Date() })
+          .where(and(eq(categories.id, id), isNull(categories.deletedAt)))
+          .returning();
         return category ?? null;
       }),
     );

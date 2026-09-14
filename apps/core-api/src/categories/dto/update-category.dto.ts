@@ -1,4 +1,5 @@
 import { IsOptional, IsString, Matches, MinLength } from "class-validator";
+import { IsActiveField } from "../../common/dto/is-active.decorator";
 
 // Hand-written rather than PartialType(CreateCategoryDto) — same reasoning
 // as products/dto/update-product.dto.ts.
@@ -18,4 +19,7 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsActiveField()
+  isActive?: boolean;
 }

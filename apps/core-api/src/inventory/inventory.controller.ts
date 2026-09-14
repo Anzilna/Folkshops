@@ -1,10 +1,11 @@
-import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { TenantMatchGuard } from "../auth/guards/tenant-match.guard";
 import { ImportRowsDto } from "../common/dto/import-rows.dto";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
+import { CreateInventoryDto } from "./dto/create-inventory.dto";
 import { UpdateInventoryDto } from "./dto/update-inventory.dto";
 import { QueryInventoryDto } from "./dto/query-inventory.dto";
 import { InventoryService } from "./inventory.service";
@@ -35,6 +36,11 @@ export class InventoryController {
     return this.inventory.importRows(tenant.id, dto.rows);
   }
 
+  @Post()
+  create(@Body() dto: CreateInventoryDto, @CurrentTenant() tenant: TenantContext) {
+    return this.inventory.create(tenant.id, dto);
+  }
+
   @Get(":productId")
   async findOne(@Param("productId") productId: string, @CurrentTenant() tenant: TenantContext) {
     const row = await this.inventory.findByProductId(tenant.id, productId);
@@ -43,13 +49,20 @@ export class InventoryController {
   }
 
   @Patch(":productId")
-  async setQuantity(
+  async update(
     @Param("productId") productId: string,
     @Body() dto: UpdateInventoryDto,
     @CurrentTenant() tenant: TenantContext,
   ) {
-    const row = await this.inventory.setQuantity(tenant.id, productId, dto.quantity);
-    if (!row) throw new NotFoundException("Product not found");
+    const row = await this.inventory.update(tenant.id, productId, dto);
+    if (!row) throw new NotFoundException("No inventory record for this product");
+    return row;
+  }
+
+  @Delete(":productId")
+  async remove(@Param("productId") productId: string, @CurrentTenant() tenant: TenantContext) {
+    const row = await this.inventory.delete(tenant.id, productId);
+    if (!row) throw new NotFoundException("No inventory record for this product");
     return row;
   }
 }

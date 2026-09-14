@@ -15,6 +15,11 @@ const STATUS_FILTER_OPTIONS = [
   { value: "archived", label: "Archived" },
 ];
 
+const ACTIVE_FILTER_OPTIONS = [
+  { value: "true", label: "Active" },
+  { value: "false", label: "Inactive" },
+];
+
 function StatusBadge({ status }: { status: ProductRow["status"] }) {
   const cls =
     status === "active"
@@ -23,6 +28,39 @@ function StatusBadge({ status }: { status: ProductRow["status"] }) {
         ? "bg-muted text-muted-foreground"
         : "bg-accent/10 text-accent";
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${cls}`}>{status}</span>;
+}
+
+/** isActive is a staff-only on/off switch, separate from the storefront
+ * publish `status` above (see products.ts schema comment) — click to
+ * toggle without opening the full edit form. */
+function ActiveToggle({ row, tenantSlug, onSaved }: { row: ProductRow; tenantSlug: string | null; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+
+  async function toggle() {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/products/${row.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !row.isActive }) }, tenantSlug);
+      if (res.ok) onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle();
+      }}
+      disabled={saving}
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
+        row.isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {row.isActive ? "Active" : "Inactive"}
+    </button>
+  );
 }
 
 export default function ProductsPage() {
@@ -65,6 +103,7 @@ export default function ProductsPage() {
       ),
     },
     { key: "status", header: "Status", sortable: true, render: (row) => <StatusBadge status={row.status} /> },
+    { key: "isActive", header: "Active", render: (row) => <ActiveToggle row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /> },
     { key: "priceCents", header: "Price", sortable: true, align: "right", render: (row) => <span className="tabular-nums">{formatPrice(row.priceCents)}</span> },
     { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
   ];
@@ -80,7 +119,10 @@ export default function ProductsPage() {
         exportFetcher={exportFetcher}
         exportFilename="products.csv"
         importFetcher={importFetcher}
-        filters={[{ key: "status", label: "All statuses", options: STATUS_FILTER_OPTIONS }]}
+        filters={[
+          { key: "status", label: "All statuses", options: STATUS_FILTER_OPTIONS },
+          { key: "isActive", label: "All", options: ACTIVE_FILTER_OPTIONS },
+        ]}
         searchPlaceholder="Search products..."
         defaultSortBy="createdAt"
         defaultSortDir="desc"
@@ -126,7 +168,7 @@ export default function ProductsPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={() => deleteMany(pendingDelete ? [pendingDelete.id] : [])}
         title={`Delete "${pendingDelete?.name}"?`}
-        description="This removes the product permanently. Orders that already include it keep their own snapshot."
+        description="Removes it from your catalog and every listing. Orders that already include it keep their own snapshot."
       />
       <ConfirmDialog
         open={!!pendingBulk}
@@ -137,7 +179,7 @@ export default function ProductsPage() {
           pendingBulk.clear();
         }}
         title={`Delete ${pendingBulk?.ids.length} products?`}
-        description="This removes them permanently."
+        description="Removes them from your catalog and every listing."
         confirmLabel="Delete all"
       />
     </>

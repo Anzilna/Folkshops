@@ -8,6 +8,41 @@ import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher 
 import { useTenantSlug } from "../../../lib/hooks";
 import type { CategoryRow } from "./category-form";
 
+const ACTIVE_FILTER_OPTIONS = [
+  { value: "true", label: "Active" },
+  { value: "false", label: "Inactive" },
+];
+
+function ActiveToggle({ row, tenantSlug, onSaved }: { row: CategoryRow; tenantSlug: string | null; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+
+  async function toggle() {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/categories/${row.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !row.isActive }) }, tenantSlug);
+      if (res.ok) onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle();
+      }}
+      disabled={saving}
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
+        row.isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {row.isActive ? "Active" : "Inactive"}
+    </button>
+  );
+}
+
 export default function CategoriesPage() {
   useBreadcrumbs([{ label: "Categories" }]);
   const router = useRouter();
@@ -32,6 +67,7 @@ export default function CategoriesPage() {
       ),
     },
     { key: "description", header: "Description", render: (row) => <span className="text-muted-foreground">{row.description || "—"}</span> },
+    { key: "isActive", header: "Active", render: (row) => <ActiveToggle row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /> },
     { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
   ];
 
@@ -46,6 +82,7 @@ export default function CategoriesPage() {
         exportFetcher={exportFetcher}
         exportFilename="categories.csv"
         importFetcher={importFetcher}
+        filters={[{ key: "isActive", label: "All", options: ACTIVE_FILTER_OPTIONS }]}
         searchPlaceholder="Search categories..."
         defaultSortBy="name"
         onRowClick={(row) => router.push(`/categories/${row.id}`)}

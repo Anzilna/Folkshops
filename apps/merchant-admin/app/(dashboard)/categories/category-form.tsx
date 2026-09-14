@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Field, Input, Textarea } from "@folkshops/ui";
+import { Button, Card, Checkbox, Field, Input, Textarea } from "@folkshops/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -12,6 +12,7 @@ export interface CategoryRow {
   name: string;
   slug: string;
   description: string | null;
+  isActive: boolean;
   createdAt: string;
 }
 
@@ -25,6 +26,7 @@ export function CategoryForm({ category, tenantSlug }: { category: CategoryRow |
   const [slug, setSlug] = useState(category?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(!!category);
   const [description, setDescription] = useState(category?.description ?? "");
+  const [isActive, setIsActive] = useState(category?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,7 +37,7 @@ export function CategoryForm({ category, tenantSlug }: { category: CategoryRow |
     try {
       const res = await apiFetch(
         category ? `/categories/${category.id}` : "/categories",
-        { method: category ? "PATCH" : "POST", body: JSON.stringify({ name, slug, description: description || undefined }) },
+        { method: category ? "PATCH" : "POST", body: JSON.stringify({ name, slug, description: description || undefined, isActive }) },
         tenantSlug,
       );
       if (!res.ok) throw new Error(await errorMessage(res, "Save failed"));
@@ -76,6 +78,10 @@ export function CategoryForm({ category, tenantSlug }: { category: CategoryRow |
         <Field label="Description" htmlFor="c-description">
           <Textarea id="c-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
         </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+          Active
+        </label>
       </Card>
 
       {error && <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}

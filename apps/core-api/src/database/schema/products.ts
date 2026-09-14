@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { categories } from "./categories";
 import { tenants } from "./tenants";
 
@@ -41,6 +41,15 @@ export const products = pgTable(
     imageUrl: text("image_url"),
     priceCents: integer("price_cents").notNull(),
     status: productStatusEnum("status").notNull().default("draft"),
+    // Separate from `status` above: status is the storefront publish
+    // lifecycle (draft/active/archived — what shoppers can see), isActive
+    // is a staff-only on/off switch independent of that (e.g. temporarily
+    // pulling a product from action without changing its publish state).
+    // deletedAt is soft-delete — DELETE sets this instead of removing the
+    // row, so every read path must exclude rows where it's set (see
+    // products.service.ts's buildFilters).
+    isActive: boolean("is_active").notNull().default(true),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

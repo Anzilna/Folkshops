@@ -1,4 +1,5 @@
 import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
+import { IsActiveField } from "../../common/dto/is-active.decorator";
 
 // Hand-written rather than `PartialType(CreateProductDto)` (@nestjs/mapped-types)
 // to avoid adding a dependency for one small DTO.
@@ -40,4 +41,7 @@ export class UpdateProductDto {
   @IsOptional()
   @IsIn(["draft", "active", "archived"])
   status?: "draft" | "active" | "archived";
+
+  @IsActiveField()
+  isActive?: boolean;
 }

@@ -1,4 +1,5 @@
 import { IsOptional, IsString, Matches, MinLength } from "class-validator";
+import { IsActiveField } from "../../common/dto/is-active.decorator";
 
 export class CreateCategoryDto {
   @IsString()
@@ -14,4 +15,7 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsActiveField()
+  isActive?: boolean;
 }

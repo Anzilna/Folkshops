@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Field, Input } from "@folkshops/ui";
+import { Button, Card, Checkbox, Field, Input } from "@folkshops/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,7 @@ export interface CustomerRow {
   id: string;
   phone: string;
   name: string | null;
+  isActive: boolean;
   createdAt: string;
 }
 
@@ -18,6 +19,7 @@ export function CustomerForm({ customer, tenantSlug }: { customer: CustomerRow |
   const router = useRouter();
   const [phone, setPhone] = useState(customer?.phone ?? "");
   const [name, setName] = useState(customer?.name ?? "");
+  const [isActive, setIsActive] = useState(customer?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,7 +31,7 @@ export function CustomerForm({ customer, tenantSlug }: { customer: CustomerRow |
       // phone is only sent on create — it's the customer's OTP login
       // identity, and changing it isn't a plain field edit (see core-api's
       // UpdateCustomerDto).
-      const body = customer ? { name: name || undefined } : { phone, name: name || undefined };
+      const body = customer ? { name: name || undefined, isActive } : { phone, name: name || undefined, isActive };
       const res = await apiFetch(
         customer ? `/customers/${customer.id}` : "/customers",
         { method: customer ? "PATCH" : "POST", body: JSON.stringify(body) },
@@ -56,6 +58,10 @@ export function CustomerForm({ customer, tenantSlug }: { customer: CustomerRow |
         <Field label="Name" htmlFor="cu-name">
           <Input id="cu-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus={!!customer} />
         </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+          Active
+        </label>
       </Card>
 
       {error && <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}

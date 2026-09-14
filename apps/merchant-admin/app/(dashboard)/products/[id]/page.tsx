@@ -55,7 +55,7 @@ export default function EditProductPage() {
         onClose={() => setConfirmOpen(false)}
         onConfirm={remove}
         title={`Delete "${product?.name}"?`}
-        description="This removes the product permanently. Orders that already include it keep their own snapshot."
+        description="Removes it from your catalog and every listing. Orders that already include it keep their own snapshot."
       />
     </>
   );

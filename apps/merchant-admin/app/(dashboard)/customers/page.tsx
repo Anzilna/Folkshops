@@ -8,6 +8,41 @@ import { apiFetch, createExportFetcher, createImportFetcher, createTableFetcher 
 import { useTenantSlug } from "../../../lib/hooks";
 import type { CustomerRow } from "./customer-form";
 
+const ACTIVE_FILTER_OPTIONS = [
+  { value: "true", label: "Active" },
+  { value: "false", label: "Inactive" },
+];
+
+function ActiveToggle({ row, tenantSlug, onSaved }: { row: CustomerRow; tenantSlug: string | null; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+
+  async function toggle() {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/customers/${row.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !row.isActive }) }, tenantSlug);
+      if (res.ok) onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle();
+      }}
+      disabled={saving}
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
+        row.isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {row.isActive ? "Active" : "Inactive"}
+    </button>
+  );
+}
+
 function initials(name: string | null, phone: string): string {
   if (!name) return phone.slice(-2);
   const parts = name.trim().split(/\s+/);
@@ -42,6 +77,7 @@ export default function CustomersPage() {
         </div>
       ),
     },
+    { key: "isActive", header: "Active", render: (row) => <ActiveToggle row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /> },
     { key: "createdAt", header: "Customer since", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
   ];
 
@@ -56,6 +92,7 @@ export default function CustomersPage() {
         exportFetcher={exportFetcher}
         exportFilename="customers.csv"
         importFetcher={importFetcher}
+        filters={[{ key: "isActive", label: "All", options: ACTIVE_FILTER_OPTIONS }]}
         searchPlaceholder="Search phone or name..."
         defaultSortBy="createdAt"
         defaultSortDir="desc"
