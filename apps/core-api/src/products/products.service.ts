@@ -1,10 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import { and, count, eq, ilike, SQL } from "drizzle-orm";
+import { and, asc, count, eq, ilike, SQL } from "drizzle-orm";
 import { bulkImport, BulkImportResult } from "../common/bulk-import.util";
 import { CsvColumn, toCsv } from "../common/csv.util";
 import { offsetFor, paginatedResult, PaginatedResult, resolveSort } from "../common/pagination.util";
 import { DbRouter } from "../database/db-router";
-import { products } from "../database/schema";
+import type { Db } from "../database/tokens";
+import { productImages, products } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { QueryProductsDto } from "./dto/query-products.dto";
@@ -37,18 +38,31 @@ const EXPORT_COLUMNS: CsvColumn<typeof products.$inferSelect>[] = [
   { key: "imageUrl", header: "imageUrl" },
 ];
 
+/** Whole-array replace: delete every gallery row for this product, then
+ * insert the given URLs in order. Runs inside the same transaction as the
+ * product write that triggered it (withTenantContext already wraps every
+ * call in db.transaction), so a product's core fields and its gallery
+ * never end up out of sync even if one insert in the middle fails. */
+async function replaceGallery(tx: Db, tenantId: string, productId: string, urls: string[]): Promise<void> {
+  await tx.delete(productImages).where(eq(productImages.productId, productId));
+  if (urls.length === 0) return;
+  await tx.insert(productImages).values(urls.map((url, position) => ({ tenantId, productId, url, position })));
+}
+
 @Injectable()
 export class ProductsService {
   constructor(private readonly dbRouter: DbRouter) {}
 
   async create(tenantId: string, input: CreateProductDto) {
+    const { images, ...productInput } = input;
     return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .insert(products)
-          .values({ tenantId, ...input })
+          .values({ tenantId, ...productInput })
           .returning();
-        return product;
+        if (images) await replaceGallery(tx, tenantId, product.id, images);
+        return { ...product, images: images ?? [] };
       }),
     );
   }
@@ -114,20 +128,26 @@ export class ProductsService {
     return this.dbRouter.read("strong", (db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx.select().from(products).where(eq(products.id, id)).limit(1);
-        return product ?? null;
+        if (!product) return null;
+        const gallery = await tx.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.position));
+        return { ...product, images: gallery.map((g) => g.url) };
       }),
     );
   }
 
   async update(tenantId: string, id: string, input: UpdateProductDto) {
+    const { images, ...productInput } = input;
     return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .update(products)
-          .set({ ...input, updatedAt: new Date() })
+          .set({ ...productInput, updatedAt: new Date() })
           .where(eq(products.id, id))
           .returning();
-        return product ?? null;
+        if (!product) return null;
+        if (images) await replaceGallery(tx, tenantId, id, images);
+        const gallery = await tx.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.position));
+        return { ...product, images: gallery.map((g) => g.url) };
       }),
     );
   }

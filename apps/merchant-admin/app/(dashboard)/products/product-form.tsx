@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { errorMessage } from "../../../lib/hooks";
 import { EditorJsField } from "./editor-js-field";
+import { ImageGalleryField } from "./image-gallery-field";
 import { ImageUploadField } from "./image-upload-field";
 
 export interface ProductRow {
@@ -15,6 +16,7 @@ export interface ProductRow {
   slug: string;
   description: string | null;
   imageUrl: string | null;
+  images: string[];
   priceCents: number;
   status: "draft" | "active" | "archived";
   categoryId: string | null;
@@ -45,6 +47,7 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
   // more than the editor itself needs.
   const descriptionRef = useRef(product?.description ?? "");
   const [imageUrl, setImageUrl] = useState<string | null>(product?.imageUrl ?? null);
+  const [images, setImages] = useState<string[]>(product?.images ?? []);
   const [priceRupees, setPriceRupees] = useState(product ? String(product.priceCents / 100) : "");
   const [status, setStatus] = useState<string>(product?.status ?? "draft");
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
@@ -73,6 +76,7 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
         slug,
         description: descriptionRef.current || undefined,
         imageUrl: imageUrl || undefined,
+        images,
         priceCents,
         status,
         categoryId: categoryId || undefined,
@@ -136,8 +140,11 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
 
       <div className="flex flex-col gap-6">
         <Card className="flex flex-col gap-5">
-          <Field label="Image" htmlFor="p-image">
+          <Field label="Cover image" htmlFor="p-image">
             <ImageUploadField value={imageUrl} onChange={setImageUrl} tenantSlug={tenantSlug} />
+          </Field>
+          <Field label="Additional photos" htmlFor="p-gallery" hint="Shown in the storefront's product gallery, in this order.">
+            <ImageGalleryField value={images} onChange={setImages} tenantSlug={tenantSlug} />
           </Field>
           <Field label="Price (INR)" htmlFor="p-price">
             <Input id="p-price" type="number" step="0.01" min="0" inputMode="decimal" value={priceRupees} onChange={(e) => setPriceRupees(e.target.value)} required />

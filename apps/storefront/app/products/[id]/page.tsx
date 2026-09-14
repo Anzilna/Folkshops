@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { CUSTOMER_ACCESS_TOKEN_COOKIE, serverFetch, type Category, type Product } from "../../../lib/api";
 import { renderDescription } from "../../../lib/editorjs-render";
 import { formatPrice } from "../../../lib/format";
-import { ProductArt } from "../../product-card";
+import { ProductGallery } from "./product-gallery";
 import { AddToCart } from "./add-to-cart";
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
@@ -40,7 +40,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       </nav>
 
       <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
-        <ProductArt product={product} className="aspect-square w-full" />
+        <ProductGallery product={product} />
 
         <div className="flex flex-col gap-6 lg:py-4">
           <div className="flex flex-col gap-2">

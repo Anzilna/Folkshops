@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
+import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
 
 export class CreateProductDto {
   @IsString()
@@ -22,6 +22,11 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  images?: string[];
 
   /** Smallest currency unit (paise for INR) — see schema/products.ts. */
   @IsInt()

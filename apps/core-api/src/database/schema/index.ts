@@ -4,6 +4,7 @@ export * from "./memberships";
 export * from "./membership-lookup";
 export * from "./categories";
 export * from "./products";
+export * from "./product-images";
 export * from "./inventory";
 export * from "./refresh-tokens";
 export * from "./platform-admins";
