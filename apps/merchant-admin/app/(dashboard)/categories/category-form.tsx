@@ -70,7 +70,7 @@ export function CategoryForm({ category, tenantSlug }: { category: CategoryRow |
               setSlug(e.target.value);
             }}
             required
-            pattern="[a-z0-9-]+"
+            pattern="[a-z0-9\-]+"
           />
         </Field>
         <Field label="Description" htmlFor="c-description">

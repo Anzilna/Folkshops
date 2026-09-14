@@ -31,7 +31,13 @@ export { API_URL, TENANT_SLUG_COOKIE };
 export async function apiFetch(path: string, init: RequestInit = {}, tenantSlug?: string | null): Promise<Response> {
   const headers = new Headers(init.headers);
   if (tenantSlug) headers.set("X-Tenant-Id", tenantSlug);
-  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  // FormData (multipart uploads) must NOT get an explicit Content-Type —
+  // the browser sets one itself, including the multipart boundary value,
+  // only when the header is left unset. Forcing application/json here
+  // would silently corrupt every file upload.
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   return fetch(`${API_URL}${path}`, {
     ...init,

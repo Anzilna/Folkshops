@@ -10,6 +10,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@editorjs/editorjs": "^2.31.6",
+    "@editorjs/header": "^2.8.9",
+    "@editorjs/list": "^2.0.9",
     "@folkshops/ui": "workspace:*",
     "next": "^15.1.0",
     "react": "^19.0.0",

@@ -1,30 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { Button, Field, Input } from "@folkshops/ui";
 import { useRouter } from "next/navigation";
-import { apiFetch, tenantSlugCookieString } from "../../lib/api";
+import { useEffect, useState } from "react";
+import { apiFetch, getStoredTenantSlug, tenantSlugCookieString } from "../../lib/api";
 
 export function LoginForm() {
   const router = useRouter();
+  const [rememberedSlug, setRememberedSlug] = useState<string | null | undefined>(undefined); // undefined = not checked yet
+  const [switching, setSwitching] = useState(false); // user asked to use a different store
   const [storeSlug, setStoreSlug] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Cookie only exists in the browser — resolved post-mount, same pattern
+  // as lib/hooks.ts's useTenantSlug. A remembered slug means this browser
+  // has logged into a store before, so there's no need to ask again: the
+  // field only reappears if that login fails or the user explicitly asks
+  // to switch stores.
+  useEffect(() => {
+    setRememberedSlug(getStoredTenantSlug(document.cookie));
+  }, []);
+
+  const usingRememberedSlug = !!rememberedSlug && !switching;
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const res = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, storeSlug);
+      const slug = usingRememberedSlug ? rememberedSlug! : storeSlug;
+      const res = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, slug);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
+        // A remembered slug can be stale (wrong store, or the merchant
+        // switched stores on this browser before) — surface the field
+        // instead of leaving them stuck retrying against the same guess.
+        if (usingRememberedSlug) {
+          setStoreSlug(rememberedSlug!);
+          setSwitching(true);
+        }
         throw new Error(body?.message ?? "Login failed");
       }
       // Remembers which store this session is for — see lib/api.ts for why
       // this exists only because there's no real subdomain in local dev.
-      document.cookie = tenantSlugCookieString(storeSlug);
+      document.cookie = tenantSlugCookieString(slug);
       router.push("/");
       router.refresh();
     } catch (err) {
@@ -36,53 +58,42 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex w-full max-w-sm flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="storeSlug" className="text-sm text-muted-foreground">
-          Store slug
-        </label>
-        <input
-          id="storeSlug"
-          value={storeSlug}
-          onChange={(e) => setStoreSlug(e.target.value)}
-          required
-          className="rounded-md border border-border bg-background px-3 py-2 text-foreground"
-          placeholder="nike"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="text-sm text-muted-foreground">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="rounded-md border border-border bg-background px-3 py-2 text-foreground"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="text-sm text-muted-foreground">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="rounded-md border border-border bg-background px-3 py-2 text-foreground"
-        />
-      </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground disabled:opacity-50"
-      >
+      {usingRememberedSlug ? (
+        <div className="flex items-center justify-between rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
+          <span>
+            Signing in to <span className="font-medium text-foreground">{rememberedSlug}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setStoreSlug(rememberedSlug ?? "");
+              setSwitching(true);
+            }}
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Switch store
+          </button>
+        </div>
+      ) : (
+        rememberedSlug !== undefined && (
+          <Field label="Store slug" htmlFor="storeSlug">
+            <Input id="storeSlug" value={storeSlug} onChange={(e) => setStoreSlug(e.target.value)} required placeholder="nike" autoFocus />
+          </Field>
+        )
+      )}
+
+      <Field label="Email" htmlFor="email">
+        <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus={usingRememberedSlug} />
+      </Field>
+      <Field label="Password" htmlFor="password">
+        <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      </Field>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <Button variant="primary" type="submit" disabled={submitting || rememberedSlug === undefined}>
         {submitting ? "Signing in..." : "Sign in"}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -48,9 +48,19 @@ export default function ProductsPage() {
       header: "Product",
       sortable: true,
       render: (row) => (
-        <div className="flex flex-col">
-          <span className="font-medium">{row.name}</span>
-          <span className="text-xs text-muted-foreground">{row.slug}</span>
+        <div className="flex items-center gap-3">
+          {row.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- external S3/MinIO URL
+            <img src={row.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+          ) : (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground">
+              {row.name.charAt(0)}
+            </span>
+          )}
+          <div className="flex flex-col">
+            <span className="font-medium">{row.name}</span>
+            <span className="text-xs text-muted-foreground">{row.slug}</span>
+          </div>
         </div>
       ),
     },

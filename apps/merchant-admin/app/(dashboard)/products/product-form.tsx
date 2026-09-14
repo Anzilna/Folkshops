@@ -1,17 +1,20 @@
 "use client";
 
-import { Button, Card, Field, Input, Select, Textarea } from "@folkshops/ui";
+import { Button, Card, Field, Input, Select } from "@folkshops/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { errorMessage } from "../../../lib/hooks";
+import { EditorJsField } from "./editor-js-field";
+import { ImageUploadField } from "./image-upload-field";
 
 export interface ProductRow {
   id: string;
   name: string;
   slug: string;
   description: string | null;
+  imageUrl: string | null;
   priceCents: number;
   status: "draft" | "active" | "archived";
   categoryId: string | null;
@@ -36,7 +39,12 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
   const [name, setName] = useState(product?.name ?? "");
   const [slug, setSlug] = useState(product?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(!!product);
-  const [description, setDescription] = useState(product?.description ?? "");
+  // Read via a ref, not state — Editor.js's own onChange fires on every
+  // keystroke; routing that through a React state update on this
+  // component would re-render (and, worse, re-init further down) far
+  // more than the editor itself needs.
+  const descriptionRef = useRef(product?.description ?? "");
+  const [imageUrl, setImageUrl] = useState<string | null>(product?.imageUrl ?? null);
   const [priceRupees, setPriceRupees] = useState(product ? String(product.priceCents / 100) : "");
   const [status, setStatus] = useState<string>(product?.status ?? "draft");
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
@@ -60,7 +68,15 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
       const priceCents = Math.round(Number(priceRupees) * 100);
       if (!Number.isFinite(priceCents) || priceCents < 0) throw new Error("Enter a valid price");
 
-      const body = { name, slug, description: description || undefined, priceCents, status, categoryId: categoryId || undefined };
+      const body = {
+        name,
+        slug,
+        description: descriptionRef.current || undefined,
+        imageUrl: imageUrl || undefined,
+        priceCents,
+        status,
+        categoryId: categoryId || undefined,
+      };
       const res = await apiFetch(
         product ? `/products/${product.id}` : "/products",
         { method: product ? "PATCH" : "POST", body: JSON.stringify(body) },
@@ -98,16 +114,31 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
               setSlug(e.target.value);
             }}
             required
-            pattern="[a-z0-9-]+"
+            pattern="[a-z0-9\-]+"
           />
         </Field>
         <Field label="Description" htmlFor="p-description">
-          <Textarea id="p-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={5} />
+          {/* Uncontrolled by design — see descriptionRef above. Keyed by
+              product id so switching from one product's edit page to
+              another's (both /products/[id], same component instance)
+              tears down and reconstructs Editor.js instead of feeding it
+              a new product's data through its own internal state. */}
+          <EditorJsField
+            key={product?.id ?? "new"}
+            holderId={`p-description-${product?.id ?? "new"}`}
+            initialValue={descriptionRef.current}
+            onChange={(json) => {
+              descriptionRef.current = json;
+            }}
+          />
         </Field>
       </Card>
 
       <div className="flex flex-col gap-6">
         <Card className="flex flex-col gap-5">
+          <Field label="Image" htmlFor="p-image">
+            <ImageUploadField value={imageUrl} onChange={setImageUrl} tenantSlug={tenantSlug} />
+          </Field>
           <Field label="Price (INR)" htmlFor="p-price">
             <Input id="p-price" type="number" step="0.01" min="0" inputMode="decimal" value={priceRupees} onChange={(e) => setPriceRupees(e.target.value)} required />
           </Field>
