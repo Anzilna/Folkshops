@@ -4,7 +4,7 @@ import * as bcrypt from "bcryptjs";
 import { eq, sql } from "drizzle-orm";
 import { DbRouter } from "../database/db-router";
 import { withTenantContext } from "../database/tenant-context";
-import { memberships, tenants, users } from "../database/schema";
+import { membershipLookup, memberships, tenants, users } from "../database/schema";
 import { TenantsService } from "../tenants/tenants.service";
 import { UsersService } from "../users/users.service";
 import { TokenService } from "./token.service";
@@ -69,6 +69,12 @@ export class AuthService {
           .insert(memberships)
           .values({ tenantId: tenant.id, userId: user.id, role: "owner" })
           .returning();
+        // membership_lookup has no RLS, so this insert runs on the same
+        // connection/transaction without needing app.tenant_id at all —
+        // it's not tenant-owned data, it's the index that makes
+        // identify() possible. Keep it in the same transaction as the
+        // memberships insert so the two can never drift.
+        await tx.insert(membershipLookup).values({ userId: user.id, tenantId: tenant.id });
         return { tenant, user, membership };
       }),
     );
@@ -83,6 +89,30 @@ export class AuthService {
       tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
       user: { id: user.id, email: user.email, name: user.name },
     };
+  }
+
+  /**
+   * Which store(s) an email belongs to — lets the login form resolve the
+   * tenant itself instead of asking the person to type a slug by hand.
+   * Reads membership_lookup directly (no withTenantContext — that table
+   * has no RLS, see its own schema comment for why that's the point).
+   * Returns [] for both "no such email" and "email exists but somehow has
+   * no memberships" — deliberately not distinguished, so this doesn't
+   * become a stronger account-existence oracle than it already is by
+   * necessity. AuthController rate-limits this the same way OTP requests
+   * are rate-limited.
+   */
+  async identify(email: string): Promise<{ slug: string; name: string }[]> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) return [];
+
+    return this.dbRouter.read("strong", (db) =>
+      db
+        .select({ slug: tenants.slug, name: tenants.name })
+        .from(membershipLookup)
+        .innerJoin(tenants, eq(membershipLookup.tenantId, tenants.id))
+        .where(eq(membershipLookup.userId, user.id)),
+    );
   }
 
   /** Logs a user into the store resolved from the request (hostname/dev header) — never a store named in the request body. */

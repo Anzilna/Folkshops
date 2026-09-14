@@ -82,9 +82,10 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     await client.query(`DELETE FROM memberships WHERE tenant_id = $1`, [tenantId]);
     await client.query("COMMIT");
 
-    // Not RLS-protected (see refresh-tokens.ts), so no tenant context
-    // needed — fine as separate statements.
+    // Not RLS-protected (see refresh-tokens.ts / membership-lookup.ts), so
+    // no tenant context needed — fine as separate statements.
     await client.query(`DELETE FROM refresh_tokens WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM membership_lookup WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

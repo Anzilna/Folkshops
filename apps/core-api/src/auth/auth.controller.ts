@@ -1,10 +1,12 @@
 import { BadRequestException, Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { clearAuthCookies, setAuthCookies, STAFF_ACCESS_TOKEN_COOKIE, STAFF_REFRESH_TOKEN_COOKIE } from "./auth-cookies";
 
 const COOKIE_NAMES = { access: STAFF_ACCESS_TOKEN_COOKIE, refresh: STAFF_REFRESH_TOKEN_COOKIE };
 import { AuthService, JwtPayload } from "./auth.service";
 import { CurrentUser } from "./decorators/current-user.decorator";
+import { IdentifyDto } from "./dto/identify.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
@@ -21,6 +23,18 @@ export class AuthController {
     const { tokens, ...body } = await this.auth.register(dto);
     setAuthCookies(res, COOKIE_NAMES, tokens);
     return body;
+  }
+
+  // IP-scoped rate limit — this is the one route in the app whose entire
+  // job is answering "does an account exist for this email, and where" (a
+  // narrower version of what any login form already reveals via its
+  // error message, but automatable at scale if left unthrottled). No
+  // tenant, no CurrentTenant() — it runs before any tenant is known.
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("identify")
+  async identify(@Body() dto: IdentifyDto) {
+    return { stores: await this.auth.identify(dto.email) };
   }
 
   @Post("login")

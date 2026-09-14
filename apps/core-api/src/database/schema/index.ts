@@ -1,6 +1,7 @@
 export * from "./tenants";
 export * from "./users";
 export * from "./memberships";
+export * from "./membership-lookup";
 export * from "./categories";
 export * from "./products";
 export * from "./inventory";
