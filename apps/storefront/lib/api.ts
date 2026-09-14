@@ -55,6 +55,7 @@ export interface Product {
   name: string;
   slug: string;
   description: string | null;
+  imageUrl: string | null;
   priceCents: number;
   status: "draft" | "active" | "archived";
   categoryId: string | null;

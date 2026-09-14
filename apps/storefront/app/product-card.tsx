@@ -2,9 +2,16 @@ import Link from "next/link";
 import type { Product } from "../lib/api";
 import { formatPrice, hueFor } from "../lib/format";
 
-/** Products have no images yet — a stable per-product tint and initial
- * stand in, so the grid reads as a catalog rather than a wall of grey. */
+/** Real image when a merchant has uploaded one; otherwise a stable
+ * per-product tint + initial, so a catalog with only some products
+ * photographed still reads as a catalog, not a wall of grey placeholders
+ * next to real photos. */
 export function ProductArt({ product, className = "" }: { product: Product; className?: string }) {
+  if (product.imageUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- external S3/MinIO URL, not a local asset next/image can optimize
+    return <img src={product.imageUrl} alt={product.name} className={`rounded-2xl object-cover ${className}`} />;
+  }
+
   const hue = hueFor(product.name);
   return (
     <div

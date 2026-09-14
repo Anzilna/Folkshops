@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { CUSTOMER_ACCESS_TOKEN_COOKIE, serverFetch, type Category, type Product } from "../../../lib/api";
+import { renderDescription } from "../../../lib/editorjs-render";
 import { formatPrice } from "../../../lib/format";
 import { ProductArt } from "../../product-card";
 import { AddToCart } from "./add-to-cart";
@@ -51,9 +52,11 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <AddToCart productId={product.id} signedIn={cookieStore.has(CUSTOMER_ACCESS_TOKEN_COOKIE)} />
 
           {product.description && (
-            <div className="flex flex-col gap-1.5 border-t border-border pt-6">
+            <div className="flex flex-col gap-2 border-t border-border pt-6">
               <h2 className="text-sm font-medium">About</h2>
-              <p className="text-sm leading-relaxed text-muted-foreground">{product.description}</p>
+              <div className="flex flex-col gap-3 text-sm leading-relaxed text-muted-foreground [&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:font-medium [&_h3]:text-foreground [&_a]:underline [&_a]:underline-offset-2">
+                {renderDescription(product.description)}
+              </div>
             </div>
           )}
 
