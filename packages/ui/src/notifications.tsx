@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePresence } from "./use-presence";
 
 export type NotificationKind = "order" | "stock" | "customer" | "system";
 
@@ -57,6 +58,7 @@ export function NotificationBell({
 }) {
   const [items, setItems] = useState(initial);
   const [open, setOpen] = useState(false);
+  const { mounted, state } = usePresence(open, 120);
   const ref = useRef<HTMLDivElement>(null);
   const unread = items.filter((n) => !n.read).length;
 
@@ -90,7 +92,7 @@ export function NotificationBell({
         onClick={() => setOpen((o) => !o)}
         aria-label={unread ? `${unread} unread notifications` : "Notifications"}
         aria-expanded={open}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-muted"
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-[background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.97]"
       >
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M6 16V11a6 6 0 1112 0v5l1.5 2h-15L6 16zM10 20a2 2 0 004 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
@@ -102,8 +104,13 @@ export function NotificationBell({
         )}
       </button>
 
-      {open && (
-        <div className="fk-drop absolute right-0 top-11 z-30 w-[22rem] overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
+      {mounted && (
+        // Origin is the bell it opens from (top-right), and it leaves the way
+        // it came. 150ms in / 120ms out — dropdown budget is 150–250ms.
+        <div
+          data-state={state}
+          className="fk-presence absolute right-0 top-11 z-30 w-[22rem] origin-top-right overflow-hidden rounded-2xl border border-border bg-background shadow-xl transition-[transform,opacity] duration-150 ease-out data-[state=closed]:-translate-y-1 data-[state=closed]:scale-[0.97] data-[state=closed]:opacity-0 data-[state=closed]:duration-[120ms]"
+        >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <span className="text-sm font-medium">Notifications</span>
             {unread > 0 && (
@@ -133,7 +140,7 @@ export function NotificationBell({
                   {!n.read && <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
                 </>
               );
-              const cls = `flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60 ${n.read ? "" : "bg-accent/[0.03]"}`;
+              const cls = `flex w-full items-start gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/60 ${n.read ? "" : "bg-accent/[0.03]"}`;
               return (
                 <li key={n.id} className="border-b border-border last:border-0">
                   {n.href ? (

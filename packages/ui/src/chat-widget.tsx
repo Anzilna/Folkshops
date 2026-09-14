@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { usePresence } from "./use-presence";
 
 interface Message {
   id: number;
@@ -28,6 +29,7 @@ const SUGGESTIONS = ["Anything out of stock?", "How are orders this week?", "New
 
 export function ChatWidget({ assistantName = "Copilot" }: { assistantName?: string }) {
   const [open, setOpen] = useState(false);
+  const { mounted, state } = usePresence(open, 150);
   const [messages, setMessages] = useState<Message[]>([
     { id: 0, role: "assistant", text: `Hi, I'm ${assistantName}. Ask me about your store — this is a preview, so answers are canned for now.` },
   ]);
@@ -68,7 +70,7 @@ export function ChatWidget({ assistantName = "Copilot" }: { assistantName?: stri
         onClick={() => setOpen((o) => !o)}
         aria-label={open ? `Close ${assistantName}` : `Open ${assistantName}`}
         aria-expanded={open}
-        className="fk-chat-fab fixed bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg transition-transform hover:scale-105 active:scale-95"
+        className="fixed bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg transition-transform duration-150 ease-out hover:scale-105 active:scale-[0.97]"
       >
         {open ? (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -82,11 +84,14 @@ export function ChatWidget({ assistantName = "Copilot" }: { assistantName?: stri
         )}
       </button>
 
-      {open && (
+      {mounted && (
+        // Grows out of the button that opened it (bottom-right), scale from
+        // 0.96 + opacity, and collapses back the same way on close.
         <div
           role="dialog"
           aria-label={assistantName}
-          className="fk-drop fixed bottom-20 right-6 z-30 flex h-[32rem] w-[22rem] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
+          data-state={state}
+          className="fk-presence fixed bottom-20 right-6 z-30 flex h-[32rem] w-[22rem] origin-bottom-right flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl transition-[transform,opacity] duration-200 ease-out data-[state=closed]:translate-y-2 data-[state=closed]:scale-[0.96] data-[state=closed]:opacity-0 data-[state=closed]:duration-150"
         >
           <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
             <span className="fk-brand-mark flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold text-accent-foreground">AI</span>
@@ -127,7 +132,7 @@ export function ChatWidget({ assistantName = "Copilot" }: { assistantName?: stri
                   key={s}
                   type="button"
                   onClick={() => send(s)}
-                  className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted hover:text-foreground active:scale-[0.97]"
                 >
                   {s}
                 </button>
@@ -147,7 +152,7 @@ export function ChatWidget({ assistantName = "Copilot" }: { assistantName?: stri
               type="submit"
               disabled={!input.trim() || typing}
               aria-label="Send"
-              className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-opacity disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-[opacity,transform] duration-150 ease-out active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M4 12l16-8-6 16-2.5-6.5L4 12z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />

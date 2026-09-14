@@ -109,10 +109,10 @@ function AdminShellInner({
               <LinkComponent
                 key={item.href}
                 href={item.href}
-                className={`fk-nav-in group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-all duration-200 ease-out ${
+                className={`fk-nav-in group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-[background-color,color,box-shadow] duration-150 ease-out active:scale-[0.99] ${
                   active
                     ? "bg-background font-medium text-foreground shadow-sm ring-1 ring-border"
-                    : "text-muted-foreground hover:translate-x-0.5 hover:bg-background/70 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
                 }`}
               >
                 <span
@@ -122,7 +122,7 @@ function AdminShellInner({
                   style={{ ["--fk-i" as string]: index } as never}
                 />
                 <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors duration-200 ${
+                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors duration-150 ${
                     active ? "text-accent" : "text-muted-foreground group-hover:text-foreground"
                   }`}
                   style={{ ["--fk-i" as string]: index } as never}
@@ -150,7 +150,7 @@ function AdminShellInner({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-md">
+        <header className="fk-material sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-md">
           <Breadcrumbs crumbs={crumbs} LinkComponent={LinkComponent} />
           <div className="flex items-center gap-2">
             {notifications && <NotificationBell items={notifications} LinkComponent={LinkComponent} />}

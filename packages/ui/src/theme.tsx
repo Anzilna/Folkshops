@@ -82,7 +82,7 @@ export function ThemeToggle() {
       onClick={() => setTheme(dark ? "light" : "dark")}
       aria-label={label}
       title={label}
-      className="fk-theme-toggle inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-muted"
+      className="fk-theme-toggle inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-[background-color,transform] duration-150 ease-out hover:bg-muted active:scale-[0.97]"
     >
       <svg className="fk-theme-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         {dark ? (

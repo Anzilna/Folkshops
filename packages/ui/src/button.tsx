@@ -29,13 +29,18 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * button classes, so a hover/focus/disabled state fixed once is fixed
  * everywhere. Plain <button> underneath, not a styled div — keyboard/
  * screen-reader behavior comes for free.
+ *
+ * Press feedback is scale(0.97) on :active over 150ms — the interface
+ * answering on pointer-down, not on release. Transition names its
+ * properties (never `transition-all`). Tailwind v4 already wraps `hover:`
+ * in `@media (hover: hover)`, so the hover states don't stick on touch.
  */
 export function Button({ variant = "secondary", size = "md", className = "", disabled, ...props }: ButtonProps) {
   return (
     <button
       type="button"
       disabled={disabled}
-      className={`inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg font-medium transition-[transform,background-color,border-color,color,opacity] duration-150 ease-out active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
       {...props}
     />
   );

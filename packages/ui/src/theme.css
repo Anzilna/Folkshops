@@ -41,14 +41,18 @@
  * etc. is theme-aware for free.
  */
 /*
- * Motion for AdminShell (admin-shell.tsx) — plain CSS, no animation
- * library, same rule merchant-admin's onboarding cards already follow.
- * Everything here collapses to a static render under reduced-motion.
+ * Motion — plain CSS, no animation library (the rule merchant-admin's
+ * onboarding cards already follow). Curves are the strong ones from
+ * .claude/skills/animate, never the weak CSS built-ins and never hand-
+ * rolled. The three tokens below override Tailwind's own --ease-out /
+ * --ease-in-out theme keys, so every `ease-out` utility in every app gets
+ * the strong curve for free. Everything here collapses to opacity-only
+ * under reduced motion.
  */
 @keyframes fk-nav-in {
   from {
     opacity: 0;
-    transform: translateX(-6px);
+    transform: translateX(-4px);
   }
   to {
     opacity: 1;
@@ -58,53 +62,21 @@
 @keyframes fk-fade-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(3px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
-.fk-nav-in {
-  animation: fk-nav-in 0.35s ease-out both;
-  animation-delay: calc(var(--fk-i, 0) * 35ms);
-}
-.fk-fade-in {
-  animation: fk-fade-in 0.25s ease-out both;
-}
-.fk-active-bar {
-  transform-origin: center;
-  transition:
-    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 0.2s ease-out;
-}
-.fk-brand-mark {
-  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in oklab, var(--accent) 70%, var(--muted-foreground)) 100%);
-}
-.fk-theme-icon {
-  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.fk-theme-toggle:hover .fk-theme-icon {
-  transform: rotate(-20deg);
-}
 @keyframes fk-pop {
   from {
-    transform: scale(0.6);
+    transform: scale(0.9);
     opacity: 0;
   }
   to {
     transform: scale(1);
     opacity: 1;
-  }
-}
-@keyframes fk-drop {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 @keyframes fk-dot {
@@ -119,24 +91,48 @@
     opacity: 1;
   }
 }
-.fk-pop {
-  animation: fk-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+/* Sidebar entrance runs once per full page load (tens of times a day), so
+ * it stays near-imperceptible: 180ms + 25ms stagger, 7 items settle < 350ms. */
+.fk-nav-in {
+  animation: fk-nav-in 180ms var(--ease-out) backwards;
+  animation-delay: calc(var(--fk-i, 0) * 25ms);
 }
-.fk-drop {
-  transform-origin: top right;
-  animation: fk-drop 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+/* Route content swap — bridges the change, not a flourish.
+ * fill-mode is `backwards`, never `both`: `both` leaves transform:
+ * translateY(0) applied forever, and a transformed ancestor becomes the
+ * containing block for position:fixed descendants — a ConfirmDialog opened
+ * inside the page then centers on the page div, not the viewport. */
+.fk-fade-in {
+  animation: fk-fade-in 150ms var(--ease-out) backwards;
+}
+.fk-pop {
+  animation: fk-pop 150ms var(--ease-out) backwards;
 }
 .fk-dot {
   animation: fk-dot 1s ease-in-out infinite;
 }
-.fk-chat-fab {
-  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+.fk-active-bar {
+  transform-origin: center;
+  transition:
+    transform 200ms var(--ease-out),
+    opacity 150ms var(--ease-out);
+}
+.fk-brand-mark {
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in oklab, var(--accent) 70%, var(--muted-foreground)) 100%);
+}
+/* Hover motion only for a real pointer — touch fires a false hover on tap. */
+@media (hover: hover) and (pointer: fine) {
+  .fk-theme-icon {
+    transition: transform 200ms var(--ease-out);
+  }
+  .fk-theme-toggle:hover .fk-theme-icon {
+    transform: rotate(-20deg);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .fk-nav-in,
   .fk-fade-in,
   .fk-pop,
-  .fk-drop,
   .fk-dot {
     animation: none;
   }
@@ -144,9 +140,25 @@
   .fk-theme-icon {
     transition: none;
   }
+  /* Presence-driven surfaces (modal, dropdown, chat) keep the opacity
+   * cross-fade and drop the movement — gentler, not zero. */
+  .fk-presence {
+    transform: none !important;
+    transition-property: opacity !important;
+  }
+}
+/* Translucent chrome goes solid when the user asks for less transparency. */
+@media (prefers-reduced-transparency: reduce) {
+  .fk-material {
+    background-color: var(--background) !important;
+    backdrop-filter: none !important;
+  }
 }
 
 @theme inline {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-border: var(--border);

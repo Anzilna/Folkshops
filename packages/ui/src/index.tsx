@@ -8,5 +8,6 @@ export * from "./chat-widget";
 export * from "./button";
 export * from "./inputs";
 export * from "./modal";
+export * from "./use-presence";
 export * from "./table";
 export * from "./csv";
