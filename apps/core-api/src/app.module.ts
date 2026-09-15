@@ -10,6 +10,8 @@ import { HealthModule } from "./health/health.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { OrdersModule } from "./orders/orders.module";
 import { StorefrontOrdersModule } from "./orders/storefront-orders.module";
+import { PaymentsWebhookModule } from "./payments/payments-webhook.module";
+import { StorefrontPaymentsModule } from "./payments/storefront-payments.module";
 import { PlatformAdminModule } from "./platform-admin/platform-admin.module";
 import { ProductsModule } from "./products/products.module";
 import { RedisThrottlerStorage } from "./redis/redis-throttler.storage";
@@ -52,6 +54,8 @@ import { UsersModule } from "./users/users.module";
     CartModule,
     OrdersModule,
     StorefrontOrdersModule,
+    StorefrontPaymentsModule,
+    PaymentsWebhookModule,
     UploadsModule,
   ],
 })

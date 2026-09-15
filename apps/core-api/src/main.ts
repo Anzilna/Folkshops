@@ -1,11 +1,18 @@
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true captures the raw request buffer (via body-parser's
+  // `verify` hook) as req.rawBody on every route, alongside the normally
+  // parsed req.body — nothing else about global JSON parsing changes.
+  // Needed because Razorpay's webhook signature is computed over the
+  // exact raw bytes it sent, which is not always byte-identical to
+  // JSON.stringify(JSON.parse(rawBody)) — see RazorpaySignatureGuard.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   // Auth cookies are httpOnly, so req.cookies (used by JwtAuthGuard and the

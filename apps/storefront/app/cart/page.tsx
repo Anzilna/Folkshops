@@ -124,9 +124,9 @@ export default function CartPage() {
                 <span className="tabular-nums">{formatPrice(cart.subtotalCents)}</span>
               </div>
               <Button variant="primary" onClick={checkout} disabled={busy === "checkout"} className="h-11 rounded-full">
-                {busy === "checkout" ? "Placing order..." : "Place order"}
+                {busy === "checkout" ? "Placing order..." : "Continue to payment"}
               </Button>
-              <p className="text-xs text-muted-foreground">No payment yet — Razorpay arrives in Phase 2. Your order is recorded as pending.</p>
+              <p className="text-xs text-muted-foreground">You&apos;ll pay on the next screen via Razorpay.</p>
             </aside>
           </div>
         )

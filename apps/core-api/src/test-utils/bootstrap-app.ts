@@ -21,7 +21,10 @@ export async function bootstrapTestApp(
   let builder = Test.createTestingModule({ imports: [AppModule] });
   if (configure) builder = configure(builder);
   const moduleRef = await builder.compile();
-  const app = moduleRef.createNestApplication();
+  // rawBody: true — same as main.ts's NestFactory.create() option, needed
+  // so req.rawBody is populated for any test exercising
+  // RazorpaySignatureGuard/the webhook route, not just production boot.
+  const app = moduleRef.createNestApplication({ rawBody: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.use(cookieParser());
   await app.init();
@@ -78,14 +81,22 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
     await client.query(`DELETE FROM otp_codes WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM customers WHERE tenant_id = $1`, [tenantId]);
+    // payment_events/payments reference orders/tenants and must go before
+    // products (payments doesn't FK products, but keeping every payments-
+    // related delete together, before the tenant_id FK it shares with the
+    // rest of this block, matches bug #17's pattern — see payments.ts).
+    await client.query(`DELETE FROM payment_events WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM payments WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM products WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM memberships WHERE tenant_id = $1`, [tenantId]);
     await client.query("COMMIT");
 
-    // Not RLS-protected (see refresh-tokens.ts / membership-lookup.ts), so
-    // no tenant context needed — fine as separate statements.
+    // Not RLS-protected (see refresh-tokens.ts / membership-lookup.ts /
+    // payment-order-lookup.ts), so no tenant context needed — fine as
+    // separate statements.
     await client.query(`DELETE FROM refresh_tokens WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM membership_lookup WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM payment_order_lookup WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

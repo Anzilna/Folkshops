@@ -4,21 +4,41 @@ import { products } from "./products";
 import { tenants } from "./tenants";
 
 /**
- * "pending" is the only real state today — checkout creates an order and
- * nothing since moves it anywhere else. "cancelled" exists so a customer
- * can back out of an order they just placed. Payment/fulfillment states
- * (paid, shipped, delivered, refunded, ...) are the Phase 2 "order state
- * machine" item in CLAUDE.md's build order and deliberately don't exist
- * yet — extend this enum then, don't grow it speculatively now.
+ * Extended for the payment gateway integration — this is the "extend this
+ * enum then" the original comment pointed at. State machine (enforced in
+ * application code, PaymentsService, not by the enum itself):
+ *   pending -> awaiting_payment (a payments row gets a real providerOrderId)
+ *   awaiting_payment -> paid (webhook/client-verify confirms capture)
+ *   awaiting_payment -> payment_failed (provider reports failure; a retry
+ *     creates a NEW payments row against the same order, reusing/rotating
+ *     the idempotency key rather than mutating the failed one)
+ *   pending -> cancelled (customer backs out before any payment attempt —
+ *     NOT reachable once awaiting_payment, cancelling mid-payment-flight
+ *     isn't supported)
+ *   paid -> refunded / paid -> partially_refunded (staff-initiated, see
+ *     PaymentsService.refundPayment())
+ * Fulfillment states (shipped, delivered, ...) remain a later Phase 2 item
+ * — not added here, this enum only covers payment.
  */
-export const orderStatusEnum = pgEnum("order_status", ["pending", "cancelled"]);
+export const orderStatusEnum = pgEnum("order_status", [
+  "pending",
+  "awaiting_payment",
+  "paid",
+  "payment_failed",
+  "cancelled",
+  "refunded",
+  "partially_refunded",
+]);
 
 /**
  * Tenant-owned. subtotalCents is the sum of its order_items at checkout
  * time, stored rather than computed on read — same reasoning as the price
  * snapshot on order_items below: what a customer paid shouldn't move if
- * product prices change later. No payment fields (Razorpay order/payment
- * IDs, etc.) — that integration is Phase 2, not built yet.
+ * product prices change later. No payment fields live directly on this
+ * table (no Razorpay order/payment IDs) — those live on `payments`
+ * (payments.ts), one-to-many against an order (each attempt is its own
+ * row); `orders.status` is the single source of truth for where the
+ * order currently stands, updated by PaymentsService as payments resolve.
  */
 export const orders = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),

@@ -128,7 +128,7 @@ export interface Cart {
 
 export interface Order {
   id: string;
-  status: "pending" | "cancelled";
+  status: "pending" | "awaiting_payment" | "paid" | "payment_failed" | "cancelled" | "refunded" | "partially_refunded";
   subtotalCents: number;
   createdAt: string;
   items?: { id: string; productName: string; priceCents: number; quantity: number }[];

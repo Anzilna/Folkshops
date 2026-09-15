@@ -12,3 +12,6 @@ export * from "./customers";
 export * from "./otp-codes";
 export * from "./carts";
 export * from "./orders";
+export * from "./payments";
+export * from "./payment-events";
+export * from "./payment-order-lookup";
