@@ -1,4 +1,5 @@
 import { derivePaymentTransition, isPayableOrderStatus, PaymentsService } from "./payments.service";
+import type { PaymentAccountsService } from "./payment-accounts.service";
 import type { PaymentProvider } from "./payment-provider.interface";
 import type { DbRouter } from "../database/db-router";
 
@@ -69,6 +70,11 @@ function chain(result: unknown) {
 
 describe("PaymentsService.initiatePayment — idempotency short-circuit", () => {
   const order = { id: "order-1", customerId: "cust-1", status: "pending", subtotalCents: 50000 };
+  // Both tests here are about idempotency, not the payments-enabled gate
+  // itself — that gate's own behavior (BadRequestException when the
+  // store hasn't activated payments) is a separate, simpler unit test
+  // below. Here the gate always passes, with a fixed linked account id.
+  const liveAccount = { getForTenant: jest.fn().mockResolvedValue({ live: true, linkedAccountId: "acc_test123" }) } as unknown as PaymentAccountsService;
   const existingPayment = {
     id: "pay-1",
     tenantId: "tenant-1",
@@ -97,7 +103,7 @@ describe("PaymentsService.initiatePayment — idempotency short-circuit", () => 
     };
     const dbRouter = { write: (fn: (db: unknown) => unknown) => fn(db) } as unknown as DbRouter;
 
-    const service = new PaymentsService(dbRouter, gateway);
+    const service = new PaymentsService(dbRouter, gateway, liveAccount);
     const result = await service.initiatePayment("tenant-1", "order-1", "cust-1", "key-1");
 
     expect(createOrder).not.toHaveBeenCalled();
@@ -135,11 +141,33 @@ describe("PaymentsService.initiatePayment — idempotency short-circuit", () => 
     };
     const dbRouter = { write: (fn: (db: unknown) => unknown) => fn(db) } as unknown as DbRouter;
 
-    const service = new PaymentsService(dbRouter, gateway);
+    const service = new PaymentsService(dbRouter, gateway, liveAccount);
     const result = await service.initiatePayment("tenant-1", "order-1", "cust-1", "key-2");
 
     expect(createOrder).toHaveBeenCalledTimes(1);
-    expect(createOrder).toHaveBeenCalledWith({ amountCents: 50000, currency: "INR", receipt: "pay-2" });
+    expect(createOrder).toHaveBeenCalledWith({
+      amountCents: 50000,
+      currency: "INR",
+      receipt: "pay-2",
+      linkedAccountId: "acc_test123",
+    });
     expect(result?.providerOrderId).toBe("order_new");
+  });
+});
+
+describe("PaymentsService.initiatePayment — payments-enabled gate", () => {
+  test("a store that hasn't activated payments rejects /pay before touching the DB", async () => {
+    const createOrder = jest.fn();
+    const gateway = { createOrder, getPublicKey: () => "rzp_test_key" } as unknown as PaymentProvider;
+    const notLive = { getForTenant: jest.fn().mockResolvedValue(null) } as unknown as PaymentAccountsService;
+    const dbRouter = { write: jest.fn() } as unknown as DbRouter;
+
+    const service = new PaymentsService(dbRouter, gateway, notLive);
+
+    await expect(service.initiatePayment("tenant-1", "order-1", "cust-1", "key-1")).rejects.toThrow(
+      "This store hasn't set up payments yet",
+    );
+    expect(createOrder).not.toHaveBeenCalled();
+    expect(dbRouter.write).not.toHaveBeenCalled();
   });
 });

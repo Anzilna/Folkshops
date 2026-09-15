@@ -9,6 +9,7 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "turbo run dev",
+    "dev:frontend": "turbo run dev --filter=@folkshops/storefront --filter=@folkshops/merchant-admin --filter=@folkshops/platform-admin --filter=@folkshops/marketing",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test"

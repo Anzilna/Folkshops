@@ -8,6 +8,7 @@ import {
   CreateOrderInput,
   CreateOrderResult,
   FetchPaymentResult,
+  LinkedAccountStatus,
   PaymentProvider,
   RefundInput,
   RefundResult,
@@ -174,6 +175,22 @@ export class RazorpayProvider implements PaymentProvider {
       ...(input.pan || input.gst ? { legal_info: { pan: input.pan, gst: input.gst } } : {}),
     });
     return { linkedAccountId: account.id, status: account.status };
+  }
+
+  /** Re-fetches the account from Razorpay directly — this codebase never
+   * assumes a Linked Account is ready to accept money just because
+   * createLinkedAccount() succeeded. Confirmed against the installed
+   * SDK's own accounts.d.ts: `activated_at` stays null and `live` stays
+   * false until Razorpay's own (external, asynchronous) review completes
+   * — `status` alone ("created", etc.) doesn't tell you that on its own. */
+  async getLinkedAccountStatus(linkedAccountId: string): Promise<LinkedAccountStatus> {
+    const { instance } = this.require();
+    const account = await instance.accounts.fetch(linkedAccountId);
+    return {
+      status: account.status,
+      live: account.live,
+      activatedAt: account.activated_at ? new Date(account.activated_at * 1000) : null,
+    };
   }
 
   /** Post-capture split — see createOrder()'s comment on the order-time

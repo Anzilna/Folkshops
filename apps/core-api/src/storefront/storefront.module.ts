@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { TokensModule } from "../auth/tokens.module";
+import { PaymentsCoreModule } from "../payments/payments-core.module";
 import { ConsoleOtpProvider } from "./console-otp.provider";
 import { CustomerAuthController } from "./customer-auth.controller";
 import { CustomerAuthService } from "./customer-auth.service";
@@ -24,7 +25,10 @@ const jwtModule = JwtModule.registerAsync({
 @Module({
   // ThrottlerModule itself is registered once, globally, in AppModule —
   // not here. This module only uses the guard on one route.
-  imports: [jwtModule, TokensModule],
+  // PaymentsCoreModule: StoreController needs PaymentAccountsService for
+  // the public paymentsEnabled flag — safe to import here (not exported
+  // further) since it never touches Jwt/Auth, no bug #7 collision risk.
+  imports: [jwtModule, TokensModule, PaymentsCoreModule],
   controllers: [CustomerAuthController, StoreController],
   providers: [
     CustomerAuthService,

@@ -83,6 +83,16 @@ export interface CreateLinkedAccountResult {
   status: string;
 }
 
+export interface LinkedAccountStatus {
+  status: string;
+  /** true only once Razorpay's own account review has completed — this is
+   * the actual payment-acceptance gate, not `status` itself (Razorpay's
+   * `status` string doesn't map 1:1 to "can this account take money
+   * yet"). See RazorpayProvider.getLinkedAccountStatus()'s comment. */
+  live: boolean;
+  activatedAt: Date | null;
+}
+
 export interface TransferToLinkedAccountInput {
   providerPaymentId: string;
   linkedAccountId: string;
@@ -107,5 +117,6 @@ export interface PaymentProvider {
   verifyWebhookSignature(input: VerifyWebhookInput): boolean;
   refund(input: RefundInput): Promise<RefundResult>;
   createLinkedAccount(input: CreateLinkedAccountInput): Promise<CreateLinkedAccountResult>;
+  getLinkedAccountStatus(linkedAccountId: string): Promise<LinkedAccountStatus>;
   transferToLinkedAccount(input: TransferToLinkedAccountInput): Promise<TransferResult>;
 }

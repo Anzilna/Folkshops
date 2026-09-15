@@ -15,3 +15,4 @@ export * from "./orders";
 export * from "./payments";
 export * from "./payment-events";
 export * from "./payment-order-lookup";
+export * from "./payment-account";

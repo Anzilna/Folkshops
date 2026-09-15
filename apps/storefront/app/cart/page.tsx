@@ -12,18 +12,26 @@ export default function CartPage() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // productId being changed, or "checkout"
+  // null while loading — deliberately distinct from false, so the
+  // checkout button doesn't flash "not accepting payments" for a moment
+  // before the real answer arrives.
+  const [paymentsEnabled, setPaymentsEnabled] = useState<boolean | null>(null);
 
   async function load() {
-    const res = await apiFetch("/storefront/cart");
-    if (res.status === 401) {
+    const [cartRes, storeRes] = await Promise.all([apiFetch("/storefront/cart"), apiFetch("/storefront/store")]);
+    if (cartRes.status === 401) {
       router.push("/login?next=/cart");
       return;
     }
-    if (!res.ok) {
+    if (!cartRes.ok) {
       setError("Couldn't load your cart.");
       return;
     }
-    setCart(await res.json());
+    setCart(await cartRes.json());
+    if (storeRes.ok) {
+      const store: { paymentsEnabled: boolean } = await storeRes.json();
+      setPaymentsEnabled(store.paymentsEnabled);
+    }
   }
 
   useEffect(() => {
@@ -123,10 +131,23 @@ export default function CartPage() {
                 <span>Total</span>
                 <span className="tabular-nums">{formatPrice(cart.subtotalCents)}</span>
               </div>
-              <Button variant="primary" onClick={checkout} disabled={busy === "checkout"} className="h-11 rounded-full">
-                {busy === "checkout" ? "Placing order..." : "Continue to payment"}
-              </Button>
-              <p className="text-xs text-muted-foreground">You&apos;ll pay on the next screen via Razorpay.</p>
+              {paymentsEnabled === false ? (
+                <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-center text-sm text-muted-foreground">
+                  This store isn&apos;t accepting payments yet — check back soon.
+                </p>
+              ) : (
+                <>
+                  <Button
+                    variant="primary"
+                    onClick={checkout}
+                    disabled={busy === "checkout" || paymentsEnabled !== true}
+                    className="h-11 rounded-full"
+                  >
+                    {busy === "checkout" ? "Placing order..." : "Continue to payment"}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">You&apos;ll pay on the next screen via Razorpay.</p>
+                </>
+              )}
             </aside>
           </div>
         )

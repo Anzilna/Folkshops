@@ -127,6 +127,20 @@
       "when": 1789468062326,
       "tag": "0017_enable-rls-payments",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789474342106,
+      "tag": "0018_medical_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789474357556,
+      "tag": "0019_enable-rls-payment-accounts",
+      "breakpoints": true
     }
   ]
 }

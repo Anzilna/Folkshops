@@ -10,6 +10,7 @@ import { HealthModule } from "./health/health.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { OrdersModule } from "./orders/orders.module";
 import { StorefrontOrdersModule } from "./orders/storefront-orders.module";
+import { PaymentAccountsModule } from "./payments/payment-accounts.module";
 import { PaymentsWebhookModule } from "./payments/payments-webhook.module";
 import { StorefrontPaymentsModule } from "./payments/storefront-payments.module";
 import { PlatformAdminModule } from "./platform-admin/platform-admin.module";
@@ -56,6 +57,7 @@ import { UsersModule } from "./users/users.module";
     StorefrontOrdersModule,
     StorefrontPaymentsModule,
     PaymentsWebhookModule,
+    PaymentAccountsModule,
     UploadsModule,
   ],
 })

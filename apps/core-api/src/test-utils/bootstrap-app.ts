@@ -65,38 +65,54 @@ function rawPgUrl(): string {
 
 /**
  * Cleans up everything a test tenant could have created — mirrors the
- * teardown pattern in database/rls-tests. The RLS-protected deletes
- * (otp_codes, customers, products, memberships) MUST run in the same
- * transaction as the set_config call: set_config(..., true) is
- * transaction-local (like SET LOCAL), so on separate auto-committed
- * statements the tenant context is already gone by the next query,
- * meaning those deletes would silently affect zero rows and the final
- * DELETE FROM tenants would then hit a foreign-key violation.
+ * teardown pattern in database/rls-tests. The RLS-protected deletes MUST
+ * run in the same transaction as the set_config call: set_config(...,
+ * true) is transaction-local (like SET LOCAL), so on separate
+ * auto-committed statements the tenant context is already gone by the
+ * next query, meaning those deletes would silently affect zero rows and
+ * the final DELETE FROM tenants would then hit a foreign-key violation.
+ * Every table here needs deleting in FK-dependency order (child before
+ * parent) — see the inline comments below for exactly which depends on
+ * which; getting this wrong surfaces as a foreign-key-violation error
+ * from whichever table was deleted too early, not a silent no-op.
  */
 export async function cleanupTestTenant(tenantId: string): Promise<void> {
   const client = new Client({ connectionString: rawPgUrl() });
   await client.connect();
   try {
+    // payment_order_lookup FKs both orders and payments — it must be
+    // cleared before either, or deleting an order/payment it still points
+    // at fails with a FK violation. Not RLS-protected (see its own schema
+    // comment), so no tenant context/transaction needed for this one.
+    await client.query(`DELETE FROM payment_order_lookup WHERE tenant_id = $1`, [tenantId]);
+
     await client.query("BEGIN");
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
     await client.query(`DELETE FROM otp_codes WHERE tenant_id = $1`, [tenantId]);
-    await client.query(`DELETE FROM customers WHERE tenant_id = $1`, [tenantId]);
-    // payment_events/payments reference orders/tenants and must go before
-    // products (payments doesn't FK products, but keeping every payments-
-    // related delete together, before the tenant_id FK it shares with the
-    // rest of this block, matches bug #17's pattern — see payments.ts).
+    // cart_items -> carts -> customers, in that order (each FKs the one
+    // before it) — missing before now, only surfaced once a test actually
+    // exercised the cart/checkout flow (storefront-payments.integration.spec.ts,
+    // the first one to). Same class of gap as bug #17.
+    await client.query(`DELETE FROM cart_items WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM carts WHERE tenant_id = $1`, [tenantId]);
+    // payment_events -> payments -> order_items/orders, in that order.
+    // payment_accounts has no FK to orders/customers, just tenants, so its
+    // position relative to these doesn't matter — grouped here anyway
+    // since it's the same payments feature. Same class of gap as bug #17.
     await client.query(`DELETE FROM payment_events WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM payments WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM payment_accounts WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM order_items WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM orders WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM customers WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM products WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM memberships WHERE tenant_id = $1`, [tenantId]);
     await client.query("COMMIT");
 
-    // Not RLS-protected (see refresh-tokens.ts / membership-lookup.ts /
-    // payment-order-lookup.ts), so no tenant context needed — fine as
-    // separate statements.
+    // Not RLS-protected (see refresh-tokens.ts / membership-lookup.ts),
+    // so no tenant context needed — fine as separate statements.
     await client.query(`DELETE FROM refresh_tokens WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM membership_lookup WHERE tenant_id = $1`, [tenantId]);
-    await client.query(`DELETE FROM payment_order_lookup WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM tenants WHERE id = $1`, [tenantId]);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

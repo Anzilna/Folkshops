@@ -49,8 +49,15 @@ class FakePaymentGateway implements PaymentProvider {
     throw new Error("not used in this suite");
   }
 
-  async createLinkedAccount(): Promise<never> {
-    throw new Error("not used in this suite");
+  async createLinkedAccount() {
+    return { linkedAccountId: "acc_fake_linked", status: "created" };
+  }
+
+  async getLinkedAccountStatus() {
+    // Activated immediately — this suite is testing the payment flow
+    // itself, not Razorpay's own (external, asynchronous) account review
+    // timing, which is unit-tested separately at the pure-logic level.
+    return { status: "activated", live: true, activatedAt: new Date() };
   }
 
   async transferToLinkedAccount(): Promise<never> {
@@ -67,14 +74,17 @@ function randomPhone(): string {
   return `+1888${Math.floor(1000000 + Math.random() * 8999999)}`;
 }
 
-async function createStaffProduct(): Promise<string> {
+async function staffLogin(): Promise<string> {
   const loginRes = await request(app.getHttpServer())
     .post("/auth/login")
     .set("X-Tenant-Id", tenant.slug)
     .send({ email: tenant.ownerEmail, password: tenant.ownerPassword })
     .expect(201);
-  const staffAccess = extractCookie(loginRes.headers["set-cookie"] as unknown as string[], "fk_access_token");
+  return extractCookie(loginRes.headers["set-cookie"] as unknown as string[], "fk_access_token")!;
+}
 
+async function createStaffProduct(): Promise<string> {
+  const staffAccess = await staffLogin();
   const productRes = await request(app.getHttpServer())
     .post("/products")
     .set("Cookie", `fk_access_token=${staffAccess}`)
@@ -82,6 +92,30 @@ async function createStaffProduct(): Promise<string> {
     .send({ name: "Payment Test Product", slug: `payment-test-${randomUUID().slice(0, 8)}`, priceCents: 50000, status: "active" })
     .expect(201);
   return productRes.body.id;
+}
+
+/** The "store admin fills and activates payments" flow, as a test setup
+ * step — everything in this suite is testing the checkout/webhook flow
+ * itself, which requires payments already being enabled for the tenant
+ * (PaymentsService.initiatePayment()'s own gate). */
+async function activatePayments(): Promise<void> {
+  const staffAccess = await staffLogin();
+  const auth = { Cookie: `fk_access_token=${staffAccess}`, "X-Tenant-Id": tenant.slug };
+  await request(app.getHttpServer())
+    .post("/payment-accounts")
+    .set(auth)
+    .send({
+      email: "owner@payment-test.local",
+      phone: "+919000000000",
+      legalBusinessName: "Payment Test Business",
+      businessType: "individual",
+      contactName: "Test Owner",
+      category: "ecommerce",
+      subcategory: "ecommerce",
+      registeredAddress: { street1: "1 Test St", city: "Bengaluru", state: "KA", postalCode: "560001", country: "IN" },
+    })
+    .expect(201);
+  await request(app.getHttpServer()).post("/payment-accounts/refresh").set(auth).expect(201);
 }
 
 async function createPayableOrder(): Promise<{ orderId: string; customerAccess: string }> {
@@ -132,6 +166,7 @@ beforeAll(async () => {
       .useValue({ canActivate: () => true }),
   );
   tenant = await createTestTenant(app);
+  await activatePayments();
 });
 
 afterAll(async () => {

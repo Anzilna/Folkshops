@@ -6,6 +6,7 @@ import { orders, paymentEvents, paymentOrderLookup, payments } from "../database
 import { withTenantContext } from "../database/tenant-context";
 import type { Db } from "../database/tokens";
 import { VerifyPaymentDto } from "./dto/verify-payment.dto";
+import { PaymentAccountsService } from "./payment-accounts.service";
 import { PAYMENT_GATEWAY, PaymentProvider } from "./payment-provider.interface";
 
 const PAYABLE_ORDER_STATUSES = ["pending", "awaiting_payment", "payment_failed"] as const;
@@ -56,6 +57,7 @@ export class PaymentsService {
   constructor(
     private readonly dbRouter: DbRouter,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentProvider,
+    private readonly paymentAccounts: PaymentAccountsService,
   ) {}
 
   /**
@@ -68,6 +70,17 @@ export class PaymentsService {
    * nothing (already exists — fetch and return its current state as-is).
    */
   async initiatePayment(tenantId: string, orderId: string, customerId: string, idempotencyKey: string): Promise<CheckoutInfo | null> {
+    // Resolved before the transaction below (its own separate read/tenant
+    // context, not nested inside the write transaction) — the actual
+    // server-side gate: a customer can never pay a store that hasn't
+    // activated payments, no matter what the storefront UI shows or
+    // hides. linkedAccount, if present, is what makes the Route split
+    // happen in createOrder() below.
+    const linkedAccount = await this.paymentAccounts.getForTenant(tenantId);
+    if (!linkedAccount?.live) {
+      throw new BadRequestException("This store hasn't set up payments yet");
+    }
+
     return this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [order] = await tx
@@ -95,6 +108,11 @@ export class PaymentsService {
             amountCents: inserted.amountCents,
             currency: inserted.currency,
             receipt: inserted.id,
+            // linkedAccount.live was already confirmed above, before this
+            // transaction started — linkedAccountId is guaranteed non-null
+            // whenever live is true (set together in the same update, see
+            // PaymentAccountsService.refreshStatus()).
+            linkedAccountId: linkedAccount.linkedAccountId!,
           });
           const [updated] = await tx
             .update(payments)

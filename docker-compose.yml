@@ -94,9 +94,29 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+    # env_file loads everything in apps/core-api/.env first (this is how
+    # RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET reach the container — they're
+    # not duplicated below); the explicit `environment:` block below still
+    # wins for any key both define (compose's own precedence), which is
+    # exactly why DATABASE_PRIMARY_URL etc. below can safely differ from
+    # what .env has for native `pnpm dev` (container-network hostnames vs
+    # localhost) without env_file silently overriding them.
+    env_file:
+      - apps/core-api/.env
     environment:
       NODE_ENV: development
       PORT: 4000
+      # pnpm's own automatic pre-script dependency check wants to purge
+      # and reinstall node_modules whenever the named volume's contents
+      # look out of sync with package.json/the lockfile (e.g. right after
+      # a new dependency is added) — and refuses to do that purge
+      # non-interactively, since `docker compose up -d` allocates no TTY.
+      # CI=true is pnpm's own documented way to skip that interactive
+      # confirmation (see the ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+      # error message itself) — CLAUDE.md bug #16's volume-nuke workaround
+      # is still occasionally needed for a truly stale volume, but this
+      # stops the *non-interactive-prompt* failure mode from recurring.
+      CI: "true"
       # Container-network hostnames (service names), not localhost — these
       # only apply inside this container. Native `pnpm dev` on the host
       # still reads apps/core-api/.env, which correctly uses localhost.
