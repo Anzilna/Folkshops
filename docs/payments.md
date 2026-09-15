@@ -52,6 +52,17 @@ The most likely real bug class here. `RazorpaySignatureGuard` computes the HMAC 
 
 `PaymentsService.resolveEventId()` currently falls back to a hash of `event type + payment id + created_at` when Razorpay doesn't send an explicit event-id header, since header availability wasn't confirmed against a real delivery before this shipped (see the code comment). The first time a real webhook actually arrives, check the raw headers/payload for anything like `x-razorpay-event-id` or a payload-level `id`/`event_id` field, and switch to that directly if present — it's a strictly better idempotency key than a derived hash.
 
+## Connecting a store's Route Linked Account (required before checkout works)
+
+A store's checkout is gated on this — `PaymentsService.initiatePayment()` rejects `/pay` with "This store hasn't set up payments yet" until it's done, and the storefront hides "Continue to payment" for the same reason.
+
+1. In merchant-admin, go to **Settings → Payments** (`/settings/payments`) and submit the form — legal business name, business type, category/subcategory, registered address, optionally PAN/GST.
+2. This calls `POST /payment-accounts`, which creates a Razorpay Linked Account (`instance.accounts.create(...)`) under your platform account and stores the returned id.
+3. The account starts **not live** — Razorpay reviews every new Linked Account before it can accept payments. There's no fixed timeline for this in test mode; click **Refresh status** on the same page to re-check (`POST /payment-accounts/refresh`, which calls `instance.accounts.fetch(id)` directly).
+4. Once `live` flips to `true`, checkout unlocks for that store immediately — no restart needed, both the gate check and the storefront's `paymentsEnabled` flag read the same live DB row.
+
+If a Linked Account seems stuck pending, check the Razorpay Dashboard's Route/sub-merchant section directly (under Account & Settings, or wherever Partner sub-merchant accounts are listed for your account type) — this codebase only surfaces whatever status Razorpay reports, it can't push the review along.
+
 ## Refunds (once Slice 4 lands)
 
 Not built yet — this section gets filled in alongside it.
