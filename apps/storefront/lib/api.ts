@@ -63,11 +63,16 @@ function withStore(slug: string | null, init: RequestInit = {}): RequestInit {
 /** Browser-side: reads the tab's own hostname fresh on every call (a
  * long-lived tab could theoretically... it can't actually navigate
  * cross-tenant without a full reload, but resolving it live costs
- * nothing and needs no state). The browser attaches customer cookies
- * itself via credentials: "include". */
+ * nothing and needs no state). Goes through "/api/..." — next.config.ts's
+ * own rewrite proxies this to core-api server-to-server, so the browser
+ * never makes a cross-*site* request to core-api directly (see that
+ * config's own comment for why that matters: SameSite=Lax silently drops
+ * the customer auth cookie otherwise, since the storefront is served from
+ * a tenant subdomain). The browser still attaches its own cookies via
+ * credentials: "include" — same-origin now, so that's trivial. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const slug = resolveStoreSlug(typeof window !== "undefined" ? window.location.host : null);
-  return fetch(`${API_URL}${path}`, { ...withStore(slug, init), credentials: "include" });
+  return fetch(`/api${path}`, { ...withStore(slug, init), credentials: "include" });
 }
 
 /**

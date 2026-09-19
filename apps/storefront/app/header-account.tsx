@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch, CART_CHANGED_EVENT, type Cart } from "../lib/api";
 
@@ -12,7 +12,6 @@ import { apiFetch, CART_CHANGED_EVENT, type Cart } from "../lib/api";
  * means "no badge", never an error page.
  */
 export function HeaderAccount({ signedIn }: { signedIn: boolean }) {
-  const router = useRouter();
   const pathname = usePathname();
   const [count, setCount] = useState<number | null>(null);
 
@@ -38,8 +37,11 @@ export function HeaderAccount({ signedIn }: { signedIn: boolean }) {
 
   async function signOut() {
     await apiFetch("/storefront/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
+    // Full navigation, not router.push()+router.refresh() — same reasoning
+    // as login-form.tsx's verify(): the root layout's own server-side
+    // cookie check doesn't reliably re-render on that combination right
+    // after a cookie just changed.
+    window.location.href = "/";
   }
 
   const linkCls = "rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
