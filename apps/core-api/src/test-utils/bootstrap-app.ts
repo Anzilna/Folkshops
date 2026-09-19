@@ -85,6 +85,10 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     // at fails with a FK violation. Not RLS-protected (see its own schema
     // comment), so no tenant context/transaction needed for this one.
     await client.query(`DELETE FROM payment_order_lookup WHERE tenant_id = $1`, [tenantId]);
+    // outbox_events is the same "not RLS-protected, no tenant context
+    // needed" shape — see its own schema comment. Same class of gap as
+    // bug #17.
+    await client.query(`DELETE FROM outbox_events WHERE tenant_id = $1`, [tenantId]);
 
     await client.query("BEGIN");
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
@@ -102,6 +106,7 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     await client.query(`DELETE FROM payment_events WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM payments WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM payment_accounts WHERE tenant_id = $1`, [tenantId]);
+    await client.query(`DELETE FROM notifications WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM order_items WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM orders WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM customers WHERE tenant_id = $1`, [tenantId]);

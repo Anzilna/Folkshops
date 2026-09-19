@@ -1,10 +1,22 @@
 "use client";
 
-import { AdminShell, ThemeToggle, demoNotifications, type NavItem } from "@folkshops/ui";
+import { AdminShell, ThemeToggle, type NavItem, type NotificationItem } from "@folkshops/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { apiFetch } from "../../lib/api";
+import { useTenantSlug } from "../../lib/hooks";
 import { LogoutButton } from "./logout-button";
+
+interface NotificationRow {
+  id: string;
+  kind: NotificationItem["kind"];
+  title: string;
+  body: string;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
 
 // Only what differs from platform-admin lives here: the nav, the brand, and
 // which logout button. The chrome itself is @folkshops/ui's AdminShell.
@@ -33,8 +45,29 @@ interface DashboardShellProps {
   children: ReactNode;
 }
 
+function toNotificationItem(row: NotificationRow): NotificationItem {
+  return { id: row.id, kind: row.kind, title: row.title, body: row.body, at: row.createdAt, read: row.readAt !== null, href: row.href ?? undefined };
+}
+
 export function DashboardShell({ tenantName, userEmail, children }: DashboardShellProps) {
   const pathname = usePathname();
+  const tenantSlug = useTenantSlug();
+  const [notifications, setNotifications] = useState<NotificationItem[] | undefined>(undefined);
+
+  useEffect(() => {
+    if (tenantSlug === null) return;
+    apiFetch("/notifications", {}, tenantSlug)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows: NotificationRow[]) => setNotifications(rows.map(toNotificationItem)))
+      .catch(() => setNotifications([]));
+  }, [tenantSlug]);
+
+  function markRead(id: string) {
+    apiFetch(`/notifications/${id}/read`, { method: "POST" }, tenantSlug).catch(() => {});
+  }
+  function markAllRead() {
+    apiFetch("/notifications/read-all", { method: "POST" }, tenantSlug).catch(() => {});
+  }
 
   return (
     <AdminShell
@@ -46,7 +79,9 @@ export function DashboardShell({ tenantName, userEmail, children }: DashboardShe
       accountSublabel="Store owner"
       accountAction={<LogoutButton />}
       headerRight={<ThemeToggle />}
-      notifications={demoNotifications()}
+      notifications={notifications}
+      onMarkNotificationRead={markRead}
+      onMarkAllNotificationsRead={markAllRead}
       assistantName="Store Copilot"
     >
       {children}

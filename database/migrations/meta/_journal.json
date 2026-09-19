@@ -162,6 +162,20 @@
       "when": 1789568740097,
       "tag": "0022_happy_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789719093320,
+      "tag": "0023_open_scorpion",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789720000000,
+      "tag": "0024_enable-rls-notifications",
+      "breakpoints": true
     }
   ]
 }

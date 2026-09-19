@@ -8,6 +8,7 @@ import { CustomersModule } from "./customers/customers.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { InventoryModule } from "./inventory/inventory.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { OrdersModule } from "./orders/orders.module";
 import { StorefrontOrdersModule } from "./orders/storefront-orders.module";
 import { PaymentAccountsModule } from "./payments/payment-accounts.module";
@@ -59,6 +60,7 @@ import { UsersModule } from "./users/users.module";
     PaymentsWebhookModule,
     PaymentAccountsModule,
     UploadsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -52,15 +52,32 @@ const KIND_STYLE: Record<NotificationKind, { icon: string; cls: string }> = {
 export function NotificationBell({
   items: initial,
   LinkComponent,
+  onMarkRead,
+  onMarkAllRead,
 }: {
   items: NotificationItem[];
   LinkComponent: React.ComponentType<{ href: string; className?: string; children: React.ReactNode; onClick?: () => void }>;
+  /** Optional — when provided, read-state is persisted server-side (called
+   * in addition to the local optimistic update below); when omitted, read
+   * state is local-only, same as before (platform-admin, still on canned
+   * `demoNotifications()`). */
+  onMarkRead?: (id: string) => void;
+  onMarkAllRead?: () => void;
 }) {
   const [items, setItems] = useState(initial);
   const [open, setOpen] = useState(false);
   const { mounted, state } = usePresence(open, 120);
   const ref = useRef<HTMLDivElement>(null);
   const unread = items.filter((n) => !n.read).length;
+
+  // `items` is fetched async by the caller (a real API call in
+  // merchant-admin's case) and may arrive after this component's first
+  // render — keep local state in sync whenever a fresh list comes in,
+  // without clobbering an optimistic mark-as-read the user just clicked.
+  useEffect(() => {
+    setItems(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,9 +97,11 @@ export function NotificationBell({
 
   function markAllRead() {
     setItems((list) => list.map((n) => ({ ...n, read: true })));
+    onMarkAllRead?.();
   }
   function markRead(id: string) {
     setItems((list) => list.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    onMarkRead?.(id);
   }
 
   return (

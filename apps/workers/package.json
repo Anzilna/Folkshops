@@ -2,5 +2,25 @@
   "name": "@folkshops/workers",
   "version": "0.0.0",
   "private": true,
-  "description": "BullMQ background workers (email/SMS/WhatsApp, indexing, outbox relay). Phase 2, not yet implemented."
+  "description": "Outbox relay + BullMQ job workers for async order-state side effects (notifications now; email/SMS/WhatsApp/indexing later, same pattern). See outbox-events.ts's schema comment in core-api for the durability guarantee this relies on.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "bullmq": "^6.3.7",
+    "dotenv": "^16.6.1",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.0",
+    "eslint": "^9.15.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0"
+  }
 }

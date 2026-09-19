@@ -4,4 +4,7 @@ packages:
   - "database/rls-tests"
 allowBuilds:
   esbuild: true
+  msgpackr-extract: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - bullmq@6.3.7

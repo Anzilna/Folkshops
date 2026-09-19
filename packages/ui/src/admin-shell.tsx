@@ -33,6 +33,10 @@ export interface AdminShellProps {
   headerRight?: ReactNode;
   /** Rendered as a bell in the top bar when provided. */
   notifications?: NotificationItem[];
+  /** See NotificationBell's own doc comment — optional, persists read
+   * state server-side when provided. */
+  onMarkNotificationRead?: (id: string) => void;
+  onMarkAllNotificationsRead?: () => void;
   /** Mounts the floating chat preview (see chat-widget.tsx). */
   assistantName?: string;
   children: ReactNode;
@@ -78,6 +82,8 @@ function AdminShellInner({
   accountAction,
   headerRight,
   notifications,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
   assistantName,
   children,
 }: AdminShellProps) {
@@ -153,7 +159,14 @@ function AdminShellInner({
         <header className="fk-material sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-md">
           <Breadcrumbs crumbs={crumbs} LinkComponent={LinkComponent} />
           <div className="flex items-center gap-2">
-            {notifications && <NotificationBell items={notifications} LinkComponent={LinkComponent} />}
+            {notifications && (
+              <NotificationBell
+                items={notifications}
+                LinkComponent={LinkComponent}
+                onMarkRead={onMarkNotificationRead}
+                onMarkAllRead={onMarkAllNotificationsRead}
+              />
+            )}
             {headerRight}
           </div>
         </header>
