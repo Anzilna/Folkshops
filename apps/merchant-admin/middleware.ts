@@ -1,21 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Cheap presence check only — not signature verification. Verifying the
- * JWT here would mean duplicating JWT_SECRET into this app, a secret this
- * app has no other reason to hold. Real validation happens where it
- * already lives: core-api's JwtAuthGuard, via the /auth/me call each
- * protected page makes. This middleware's only job is avoiding a
- * flash-of-protected-content by redirecting before render when the cookie
- * is obviously absent; an expired/forged cookie still gets caught
- * server-side and bounced to /login from there.
+ * Presence check for routing, plus one real thing: silently refreshing an
+ * expired/missing access token using the refresh cookie before bouncing to
+ * /login. Access tokens are 15 minutes (see CLAUDE.md's three-auth-surfaces
+ * section) — without this, every page navigation more than 15 minutes
+ * after login hit DashboardLayout's own `/auth/me` call, got a 401, and
+ * redirected to /login even though a perfectly valid 30-day refresh token
+ * was sitting right there unused. Found live: a real login, followed by
+ * normal use past the 15-minute mark, kept bouncing back to /login.
+ *
+ * Still not JWT signature verification here — that stays in core-api's
+ * JwtAuthGuard (this app never holds JWT_SECRET). The refresh call is a
+ * real network round-trip to core-api's own /auth/refresh, which does the
+ * actual verification/rotation; this middleware only forwards cookies in
+ * both directions around that call.
  */
 const ACCESS_TOKEN_COOKIE = "fk_access_token";
+const REFRESH_TOKEN_COOKIE = "fk_refresh_token";
 const PUBLIC_PATHS = ["/login", "/register"];
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const isPublic = PUBLIC_PATHS.some((path) => req.nextUrl.pathname.startsWith(path));
   const hasSession = req.cookies.has(ACCESS_TOKEN_COOKIE);
+
+  if (!isPublic && !hasSession && req.cookies.has(REFRESH_TOKEN_COOKIE)) {
+    const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { Cookie: req.headers.get("cookie") ?? "" },
+    });
+
+    if (refreshRes.ok) {
+      const setCookies = refreshRes.headers.getSetCookie();
+      // Make the fresh access token visible to THIS request as it
+      // continues to the page — without this, DashboardLayout's own
+      // cookies() read still sees the browser's original (missing/expired)
+      // cookie header, not the one just issued, and 401s anyway.
+      const requestHeaders = new Headers(req.headers);
+      const existingCookieHeader = requestHeaders.get("cookie") ?? "";
+      const newPairs = setCookies.map((c) => c.split(";")[0]);
+      requestHeaders.set("cookie", [existingCookieHeader, ...newPairs].filter(Boolean).join("; "));
+
+      const response = NextResponse.next({ request: { headers: requestHeaders } });
+      // And forward the same Set-Cookie headers to the browser, so future
+      // requests carry the new access token too, not just this one.
+      for (const cookie of setCookies) response.headers.append("Set-Cookie", cookie);
+      return response;
+    }
+    // Refresh token itself invalid/expired/revoked — fall through to the
+    // normal redirect below, same as if no cookies existed at all.
+  }
 
   if (!isPublic && !hasSession) {
     return NextResponse.redirect(new URL("/login", req.url));
