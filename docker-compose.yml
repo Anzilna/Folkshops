@@ -127,7 +127,7 @@ services:
       JWT_SECRET: dev-only-change-me
       PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
       CUSTOMER_JWT_SECRET: dev-only-change-me-three
-      CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003
+      CORS_ORIGINS: http://localhost:3000,http://*.localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003
       # AWS_S3_ENDPOINT is what makes this MinIO instead of real AWS — see
       # S3Service's own comment. AWS_S3_PUBLIC_URL is what browsers use
       # (localhost:9000, since the container-network "minio" hostname

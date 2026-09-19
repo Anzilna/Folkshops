@@ -35,7 +35,7 @@ export const orderStatusEnum = pgEnum("order_status", [
  * time, stored rather than computed on read — same reasoning as the price
  * snapshot on order_items below: what a customer paid shouldn't move if
  * product prices change later. No payment fields live directly on this
- * table (no Razorpay order/payment IDs) — those live on `payments`
+ * table (no Stripe session/payment IDs) — those live on `payments`
  * (payments.ts), one-to-many against an order (each attempt is its own
  * row); `orders.status` is the single source of truth for where the
  * order currently stands, updated by PaymentsService as payments resolve.

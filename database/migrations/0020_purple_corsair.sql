@@ -1,0 +1,1 @@
+ALTER TABLE "payment_accounts" ALTER COLUMN "registered_address" DROP NOT NULL;

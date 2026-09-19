@@ -141,6 +141,27 @@
       "when": 1789474357556,
       "tag": "0019_enable-rls-payment-accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789479005731,
+      "tag": "0020_purple_corsair",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789480000000,
+      "tag": "0021_stripe-connect-migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789568740097,
+      "tag": "0022_happy_nebula",
+      "breakpoints": true
     }
   ]
 }

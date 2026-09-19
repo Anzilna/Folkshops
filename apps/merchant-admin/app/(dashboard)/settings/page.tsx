@@ -8,7 +8,7 @@ export default function SettingsPage() {
       <Card className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold">Payments</h2>
-          <p className="text-xs text-muted-foreground">Connect a Razorpay account so customers can pay you directly.</p>
+          <p className="text-xs text-muted-foreground">Connect Stripe so customers can pay you directly.</p>
         </div>
         <Link href="/settings/payments" className="text-sm font-medium text-accent underline underline-offset-4">
           Set up &rarr;

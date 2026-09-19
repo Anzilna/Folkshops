@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { serverFetch, type Order } from "../../../lib/api";
 import { formatDate, formatPrice } from "../../../lib/format";
-import { RazorpayCheckout } from "./razorpay-checkout";
+import { StripeCheckoutButton } from "./stripe-checkout-button";
 
 const PAYABLE_STATUSES: Order["status"][] = ["pending", "awaiting_payment", "payment_failed"];
 
@@ -12,17 +12,13 @@ export default async function OrderPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ placed?: string; paid?: string }>;
+  searchParams: Promise<{ placed?: string; paid?: string; canceled?: string }>;
 }) {
-  const [{ id }, { placed, paid }, cookieStore] = await Promise.all([params, searchParams, cookies()]);
-  const [res, storeRes] = await Promise.all([
-    serverFetch(`/storefront/orders/${id}`, cookieStore.toString()),
-    serverFetch("/storefront/store"),
-  ]);
+  const [{ id }, { placed, paid, canceled }, cookieStore] = await Promise.all([params, searchParams, cookies()]);
+  const res = await serverFetch(`/storefront/orders/${id}`, cookieStore.toString());
   if (res.status === 401) redirect(`/login?next=/orders/${id}`);
   if (!res.ok) notFound();
   const order: Order = await res.json();
-  const store: { name: string } | null = storeRes.ok ? await storeRes.json() : null;
   const items = order.items ?? [];
   const units = items.reduce((n, i) => n + i.quantity, 0);
   // Payment failed on the last attempt but the customer can still retry —
@@ -52,6 +48,14 @@ export default async function OrderPage({
           </div>
         </div>
       )}
+      {canceled && payable && (
+        <div className="fk-fade-in flex items-start gap-3 rounded-2xl border border-border bg-muted/40 px-5 py-4">
+          <div>
+            <p className="text-sm font-medium">Payment not completed</p>
+            <p className="text-sm text-muted-foreground">You can try again below whenever you&apos;re ready.</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1">
         <Link href="/orders" className="text-sm text-muted-foreground hover:text-foreground">
@@ -63,12 +67,12 @@ export default async function OrderPage({
         </p>
       </div>
 
-      {payable && store && (
+      {payable && (
         <div className="rounded-2xl border border-border p-5">
           {order.status === "payment_failed" && (
             <p className="mb-3 text-sm text-destructive">The last payment attempt didn&apos;t go through — try again.</p>
           )}
-          <RazorpayCheckout orderId={order.id} storeName={store.name} />
+          <StripeCheckoutButton orderId={order.id} />
         </div>
       )}
 

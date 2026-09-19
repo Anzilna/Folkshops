@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { PaymentsCoreModule } from "./payments-core.module";
 import { PaymentsWebhookController } from "./payments-webhook.controller";
-import { RazorpaySignatureGuard } from "./guards/razorpay-signature.guard";
+import { StripeSignatureGuard } from "./guards/stripe-signature.guard";
 
 // PaymentsCoreModule only — no AuthModule/StorefrontModule, since the
 // webhook needs neither auth surface at all. This sidesteps bug #7's
@@ -11,6 +11,6 @@ import { RazorpaySignatureGuard } from "./guards/razorpay-signature.guard";
 @Module({
   imports: [PaymentsCoreModule],
   controllers: [PaymentsWebhookController],
-  providers: [RazorpaySignatureGuard],
+  providers: [StripeSignatureGuard],
 })
 export class PaymentsWebhookModule {}

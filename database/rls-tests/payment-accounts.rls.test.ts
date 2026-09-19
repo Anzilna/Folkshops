@@ -45,11 +45,10 @@ async function createTestTenant(suffix: string): Promise<TestTenant> {
   const tenantId = tenant.rows[0].id;
 
   const accountId = await withTenantContext(tenantId, async (client) => {
-    const account = await client.query(
-      `INSERT INTO payment_accounts (tenant_id, email, phone, legal_business_name, business_type, contact_name, category, subcategory, registered_address)
-       VALUES ($1, $2, $3, 'Test Business', 'individual', 'Test Owner', 'ecommerce', 'ecommerce', '{}'::jsonb) RETURNING id`,
-      [tenantId, `owner-${suffix}-${runId}@test.local`, `+1888${suffix}${runId.slice(0, 4)}`],
-    );
+    const account = await client.query(`INSERT INTO payment_accounts (tenant_id, linked_account_id) VALUES ($1, $2) RETURNING id`, [
+      tenantId,
+      `acct_test_${suffix}_${runId}`,
+    ]);
     return account.rows[0].id;
   });
 

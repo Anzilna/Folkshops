@@ -23,7 +23,7 @@ export async function bootstrapTestApp(
   const moduleRef = await builder.compile();
   // rawBody: true — same as main.ts's NestFactory.create() option, needed
   // so req.rawBody is populated for any test exercising
-  // RazorpaySignatureGuard/the webhook route, not just production boot.
+  // StripeSignatureGuard/the webhook route, not just production boot.
   const app = moduleRef.createNestApplication({ rawBody: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.use(cookieParser());

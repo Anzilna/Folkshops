@@ -1,68 +1,75 @@
 # Payments — local dev runbook
 
-See `docs/decisions/0006-payment-gateway.md` for the architecture and the "why". This is the "how do I actually use it locally" doc.
+See `docs/decisions/0006-payment-gateway.md` for the architecture and the "why", including the Stripe migration addendum (why Razorpay Route was replaced, on 2026-09-15). This is the "how do I actually use it locally" doc.
 
-## Getting Razorpay test-mode keys
+## Getting Stripe test-mode keys
 
-1. Sign up / log in at [dashboard.razorpay.com](https://dashboard.razorpay.com) and switch to **Test Mode** (toggle, top of the dashboard).
-2. Settings → API Keys → Generate Test Key. You get a `key_id` (`rzp_test_...`) and a `key_secret` — the secret is shown once, copy it immediately.
-3. Settings → Webhooks → Add New Webhook. Point it at your local tunnel URL + `/payments/webhooks/razorpay` (see below), select at minimum `payment.captured` and `payment.failed`, set a webhook secret (this is a **separate** secret from `key_secret` — never reuse it).
+1. Sign up / log in at [dashboard.stripe.com](https://dashboard.stripe.com) — Stripe is test-mode by default for a new account, no separate toggle needed to start (a live-mode business review only gates going live later).
+2. Developers → API keys → copy the **Secret key** (`sk_test_...`).
+3. **One-time, non-code setup**: complete your platform's Connect profile at [dashboard.stripe.com/connect/registration](https://dashboard.stripe.com/connect/registration) — required before "Connect Stripe" (Express account + Account Links) will work at all. This is a Dashboard account setting, not an env var.
+4. Webhook secret — see "Pointing a local webhook forwarder" below; the Stripe CLI generates one for you, you don't create it in the Dashboard for local dev.
 
 ## Local `.env`
 
 ```
-RAZORPAY_KEY_ID=rzp_test_...
-RAZORPAY_KEY_SECRET=...
-RAZORPAY_WEBHOOK_SECRET=...
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+MERCHANT_ADMIN_URL=http://localhost:3001
 ```
 
-`RazorpayProvider` reads these lazily via `ConfigService`, same as every other secret in this codebase — the app boots fine with them unset, a payment attempt fails with a clear 500 instead.
+`StripeProvider` reads these lazily via `ConfigService`, same as every other secret in this codebase — the app boots fine with them unset, a payment or Connect attempt fails with a clear 500 instead. `MERCHANT_ADMIN_URL` is where `PaymentAccountsService.connect()` points Stripe's Account Link `return_url`/`refresh_url` — merchant-admin isn't per-tenant-subdomain-resolved the way storefront is, so a single fixed origin is correct here (unlike checkout, where the storefront itself supplies its own `returnUrl` per request — see `PayOrderDto`).
 
-## Pointing a local tunnel at the webhook
+## Pointing a local webhook forwarder
 
-`core-api` listens on `:4000` locally, not reachable from the public internet Razorpay's servers need to reach to deliver a webhook. Use a tunnel:
+Stripe's own CLI does this without a tunnel:
 
 ```bash
-ngrok http 4000
+stripe login          # one-time
+stripe listen --forward-to localhost:4000/payments/webhooks/stripe
 ```
 
-Take the `https://<random>.ngrok-free.app` URL ngrok prints and set it as the webhook URL in the Razorpay dashboard, pointed at `/payments/webhooks/razorpay` (e.g. `https://<random>.ngrok-free.app/payments/webhooks/razorpay`). Update it every time ngrok restarts (the free tier's URL isn't stable across sessions) — or use `ngrok http 4000 --domain=<your-reserved-domain>` if you have one reserved.
+It prints a `whsec_...` value the moment it starts — that's your `STRIPE_WEBHOOK_SECRET` for this session (a fresh one each time you run `stripe listen`, unlike a Dashboard-registered production webhook's stable secret). Leave it running in its own terminal alongside `core-api`.
 
 ## Testing a payment manually
 
-1. `docker compose up -d` (Postgres/Redis/MinIO), `pnpm --filter @folkshops/core-api db:migrate`, `pnpm --filter @folkshops/core-api dev`, `pnpm --filter @folkshops/storefront dev`.
+1. `docker compose up -d` (Postgres/Redis/MinIO), `pnpm --filter @folkshops/core-api db:migrate`, `pnpm --filter @folkshops/core-api dev`, `pnpm --filter @folkshops/storefront dev`, and `stripe listen --forward-to localhost:4000/payments/webhooks/stripe` in its own terminal.
 2. Browse a store (`nike.localhost:3000` or whichever seeded tenant), add something to the cart, "Continue to payment."
-3. On the order page, click "Pay now" — Razorpay Checkout opens.
-4. Use a [published test card](https://razorpay.com/docs/payments/payments/test-card-upi-details/) (as of writing, `4111 1111 1111 1111`, any future expiry, any CVV) or a test UPI id, and complete the payment.
-5. The order page should redirect to `?paid=1` and show "Payment received" within a second or two (the client-side verify path) — the webhook (async, from Razorpay's servers via the tunnel) independently confirms the same thing moments later; both paths are safe to run, the webhook is authoritative if they ever disagree.
+3. On the order page, click "Pay now" — this redirects the whole browser to Stripe's own hosted Checkout page (`checkout.stripe.com`), not a widget embedded in the storefront.
+4. Use a [published test card](https://docs.stripe.com/testing#cards) (as of writing, `4242 4242 4242 4242`, any future expiry, any CVC, any postal code) and complete the payment.
+5. Stripe redirects back to `/orders/<id>?paid=1`. The order won't actually show "Payment received" until the webhook (`checkout.session.completed`, delivered async via `stripe listen`) lands — check `core-api`'s log or just refresh the order page a moment later. Unlike the old Razorpay flow, there's no client-side optimistic-verify step anymore (Stripe Checkout has no callback to verify against) — the webhook is the *only* confirmation path.
 
 ## Simulating a duplicate webhook delivery
 
-Razorpay's dashboard: Settings → Webhooks → (your webhook) → Logs → pick a recent delivery → "Resend". This re-sends the exact same payload/signature. `payment_events.(tenantId, providerEventId)`'s unique index should make the second delivery a no-op — check `core-api`'s logs for `"Duplicate webhook delivery ... — no-op"` and confirm nothing about the order changed a second time.
+```bash
+stripe events resend evt_...   # the event id from `stripe listen`'s own log line, or the Dashboard's Developers > Events list
+```
+
+`payment_events.(tenantId, providerEventId)`'s unique index should make the second delivery a no-op — check `core-api`'s logs for `"Duplicate webhook delivery ... — no-op"` and confirm nothing about the order changed a second time.
 
 ## Troubleshooting a raw-body signature mismatch
 
-The most likely real bug class here. `RazorpaySignatureGuard` computes the HMAC over `req.rawBody` — if that's ever empty/undefined, or if it's somehow been re-encoded, verification fails with a `401` even for a genuinely correctly-signed delivery. Check:
+The most likely real bug class here. `StripeSignatureGuard` computes the HMAC over `req.rawBody` — if that's ever empty/undefined, or if it's somehow been re-encoded, verification fails with a `401` even for a genuinely correctly-signed delivery. Check:
 
 - `main.ts` still passes `{ rawBody: true }` to `NestFactory.create` (or `createNestApplication` in a test context — see `test-utils/bootstrap-app.ts`).
 - No middleware ahead of the webhook route parses/re-serializes the body first (nothing in this codebase does today, but a future global middleware addition could break this silently).
 - The `Content-Type` header on the incoming request is `application/json` — body-parser's raw-capture only runs for content types it's configured to parse.
+- You're using the `whsec_...` `stripe listen` just printed, not a stale one from a previous run — it rotates every time the CLI restarts.
 
-## `providerEventId` — a known open question
-
-`PaymentsService.resolveEventId()` currently falls back to a hash of `event type + payment id + created_at` when Razorpay doesn't send an explicit event-id header, since header availability wasn't confirmed against a real delivery before this shipped (see the code comment). The first time a real webhook actually arrives, check the raw headers/payload for anything like `x-razorpay-event-id` or a payload-level `id`/`event_id` field, and switch to that directly if present — it's a strictly better idempotency key than a derived hash.
-
-## Connecting a store's Route Linked Account (required before checkout works)
+## Connecting a store's Stripe account (required before checkout works)
 
 A store's checkout is gated on this — `PaymentsService.initiatePayment()` rejects `/pay` with "This store hasn't set up payments yet" until it's done, and the storefront hides "Continue to payment" for the same reason.
 
-1. In merchant-admin, go to **Settings → Payments** (`/settings/payments`) and submit the form — legal business name, business type, category/subcategory, registered address, optionally PAN/GST.
-2. This calls `POST /payment-accounts`, which creates a Razorpay Linked Account (`instance.accounts.create(...)`) under your platform account and stores the returned id.
-3. The account starts **not live** — Razorpay reviews every new Linked Account before it can accept payments. There's no fixed timeline for this in test mode; click **Refresh status** on the same page to re-check (`POST /payment-accounts/refresh`, which calls `instance.accounts.fetch(id)` directly).
-4. Once `live` flips to `true`, checkout unlocks for that store immediately — no restart needed, both the gate check and the storefront's `paymentsEnabled` flag read the same live DB row.
+1. In merchant-admin, go to **Settings → Payments** (`/settings/payments`) and click **Connect Stripe**. This calls `POST /payment-accounts/connect`, which creates a bare v2 Core Account (`stripe.v2.core.accounts.create(...)`, `recipient` configuration — see ADR 0006's Addendum 3 for why v2/recipient, not v1 Express — no business/KYC fields sent, Folkshops never collects them) and immediately redirects the browser to a Stripe-hosted onboarding URL (`stripe.v2.core.accountLinks.create(...)`).
+2. Complete onboarding on Stripe's own page — business details, identity, bank account, everything, directly on `connect.stripe.com`.
+3. Stripe redirects back to `/settings/payments`, which automatically re-checks status (same as clicking **Refresh status**).
+4. The account starts **not live**. Once `live` (`configuration.recipient.capabilities.stripe_balance.stripe_transfers.status === "active"`) flips to `true`, checkout unlocks for that store immediately.
 
-If a Linked Account seems stuck pending, check the Razorpay Dashboard's Route/sub-merchant section directly (under Account & Settings, or wherever Partner sub-merchant accounts are listed for your account type) — this codebase only surfaces whatever status Razorpay reports, it can't push the review along.
+If an account seems stuck, check it directly in the Stripe Dashboard (Connect → Accounts) — this codebase only surfaces whatever Stripe reports, it can't push the review along.
 
-## Refunds (once Slice 4 lands)
+**If step 1 itself fails:**
+- Skipping the one-time platform Connect profile setup (`dashboard.stripe.com/connect/registration`) — required before `v2/core/accounts`/`account_links` will succeed at all.
+- `identity.country` in `StripeProvider.createConnectAccount()` is hardcoded to match **this platform Stripe account's own registered country** (currently `"AE"` — Stripe won't let a platform create connected accounts in a country it isn't itself allowed to serve). If you're on a different Stripe account, this may need to change — see Addendum 3.
 
-Not built yet — this section gets filled in alongside it.
+## Refunds
+
+Not built yet — `StripeProvider.refund()` exists (Stripe's Refunds resource, confirmed against the installed SDK) but has no caller anywhere in this codebase yet, matching the project's own "don't build without a caller" principle. This section gets filled in once a refund flow lands.

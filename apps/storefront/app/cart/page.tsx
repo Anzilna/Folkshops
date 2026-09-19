@@ -145,7 +145,7 @@ export default function CartPage() {
                   >
                     {busy === "checkout" ? "Placing order..." : "Continue to payment"}
                   </Button>
-                  <p className="text-xs text-muted-foreground">You&apos;ll pay on the next screen via Razorpay.</p>
+                  <p className="text-xs text-muted-foreground">You&apos;ll pay on the next screen via Stripe.</p>
                 </>
               )}
             </aside>

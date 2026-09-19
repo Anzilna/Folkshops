@@ -1,23 +1,30 @@
-import { boolean, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { tenants } from "./tenants";
 
 /**
  * Tenant-owned, RLS-enabled, at most one row per tenant (uniqueIndex
- * below) — a store's Route/Linked Account connection. No secrets stored
- * here: unlike a "paste your own API keys" model, a Linked Account under
- * Route is created/called using the *platform's own* RAZORPAY_KEY_ID/
- * SECRET (env vars, unchanged since Slice 1) — this table only stores the
- * Linked Account id Razorpay returns and its own KYC submission, nothing
+ * below) — a store's Stripe Connect account connection. No secrets stored
+ * here: a connected account is created/called using the *platform's own*
+ * STRIPE_SECRET_KEY (env var) — this table only stores the Connect
+ * account id Stripe returns and its cached capability flags, nothing
  * sensitive enough to need encryption at rest.
  *
- * `live` is the actual payment-acceptance gate — see RazorpayProvider's
- * RazorpayAccount type: `activated_at` stays null and `live` stays false
- * until Razorpay's own (external, asynchronous) account review completes.
- * Folkshops cannot make that happen faster; `status`/`live`/`activatedAt`
- * are a cached copy of whatever Razorpay last reported, refreshed by
- * calling PaymentsService.refreshLinkedAccountStatus() (merchant-admin's
- * "Refresh status" button), not kept continuously in sync by a webhook —
- * see docs/decisions/0006-payment-gateway.md for why that's not built.
+ * Deliberately holds none of a merchant's business/KYC details — unlike
+ * the old Razorpay Route flow (see docs/decisions/0006-payment-gateway.md's
+ * Stripe migration addendum for why), Stripe's own hosted Account Link
+ * onboarding collects legal name, business type, address, bank details,
+ * etc. directly, and Folkshops never sees them. "Connect Stripe" creates
+ * this row with nothing but a fresh `linkedAccountId` in it.
+ *
+ * `live` is the actual payment-acceptance gate, mirroring Stripe's own
+ * `charges_enabled` on the Account object — it stays false until Stripe's
+ * own (external, asynchronous) account review completes. Folkshops cannot
+ * make that happen faster; `live`/`payoutsEnabled`/`detailsSubmitted` are
+ * a cached copy of whatever Stripe last reported, refreshed by calling
+ * PaymentAccountsService.refreshStatus() (merchant-admin's "Refresh
+ * status" button, and automatically on returning from Stripe's onboarding
+ * flow) — not kept continuously in sync by a webhook, same
+ * anti-overengineering reasoning as before.
  */
 export const paymentAccounts = pgTable(
   "payment_accounts",
@@ -26,23 +33,12 @@ export const paymentAccounts = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
-    provider: text("provider").notNull().default("razorpay"),
+    provider: text("provider").notNull().default("stripe"),
+    // Stripe's "acct_..." Connect account id.
     linkedAccountId: text("linked_account_id"),
-    // KYC submission — see PaymentProvider's CreateLinkedAccountInput for
-    // what each maps to in the actual Razorpay API call.
-    email: text("email").notNull(),
-    phone: text("phone").notNull(),
-    legalBusinessName: text("legal_business_name").notNull(),
-    businessType: text("business_type").notNull(),
-    contactName: text("contact_name").notNull(),
-    category: text("category").notNull(),
-    subcategory: text("subcategory").notNull(),
-    pan: text("pan"),
-    gst: text("gst"),
-    registeredAddress: jsonb("registered_address").notNull(),
-    // Cached copy of Razorpay's own account status — see comment above.
-    status: text("status"),
     live: boolean("live").notNull().default(false),
+    payoutsEnabled: boolean("payouts_enabled").notNull().default(false),
+    detailsSubmitted: boolean("details_submitted").notNull().default(false),
     activatedAt: timestamp("activated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

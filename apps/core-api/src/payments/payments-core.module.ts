@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { RazorpayProvider } from "./providers/razorpay.provider";
+import { StripeProvider } from "./providers/stripe.provider";
 import { PAYMENT_GATEWAY } from "./payment-provider.interface";
 import { PaymentAccountsService } from "./payment-accounts.service";
 import { PaymentsService } from "./payments.service";
@@ -21,9 +21,9 @@ import { PaymentsService } from "./payments.service";
  * its own (customer) JwtModule.
  */
 @Module({
-  providers: [PaymentsService, PaymentAccountsService, { provide: PAYMENT_GATEWAY, useClass: RazorpayProvider }],
+  providers: [PaymentsService, PaymentAccountsService, { provide: PAYMENT_GATEWAY, useClass: StripeProvider }],
   // PAYMENT_GATEWAY exported alongside the services, not just them —
-  // RazorpaySignatureGuard (in PaymentsWebhookModule) injects
+  // StripeSignatureGuard (in PaymentsWebhookModule) injects
   // PAYMENT_GATEWAY directly, not through a service, so it needs the
   // binding visible too or Nest can't resolve it at boot
   // (UnknownDependenciesException) — caught by actually booting the app,

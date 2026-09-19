@@ -1,11 +1,10 @@
-import { createHash } from "node:crypto";
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
+import type Stripe from "stripe";
 import { DbRouter } from "../database/db-router";
-import { orders, paymentEvents, paymentOrderLookup, payments } from "../database/schema";
+import { orders, outboxEvents, paymentEvents, paymentOrderLookup, payments } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 import type { Db } from "../database/tokens";
-import { VerifyPaymentDto } from "./dto/verify-payment.dto";
 import { PaymentAccountsService } from "./payment-accounts.service";
 import { PAYMENT_GATEWAY, PaymentProvider } from "./payment-provider.interface";
 
@@ -17,30 +16,40 @@ export function isPayableOrderStatus(status: string): boolean {
   return (PAYABLE_ORDER_STATUSES as readonly string[]).includes(status);
 }
 
-/** The order-status side of the payment state machine (see orders.ts
- * schema comment for the full transition table) — a provider payment
- * status maps to at most one order-status change. Pure and exported
- * specifically so this mapping is unit-tested directly, rather than only
- * indirectly through a DB-mocked integration-style test. Returns
- * `orderStatus: null` for any status that isn't a terminal outcome
- * (created/authorized) — applyPaymentResult() only updates orders.status
- * when this returns non-null. */
-export function derivePaymentTransition(providerStatus: string): {
+/**
+ * The order-status side of the payment state machine (see orders.ts
+ * schema comment for the full transition table). Pure and exported
+ * specifically so this mapping is unit-tested directly. `checkout.session.
+ * completed` with payment_status "paid" is the success path; card
+ * payments in Stripe Checkout settle synchronously, so a customer who
+ * hits a decline just retries within the same (not-yet-completed)
+ * session — `checkout.session.expired` (abandoned or truly failed past
+ * retry) is what actually marks an order payment_failed, not a per-attempt
+ * decline event. Returns `orderStatus: null` for any event/status this
+ * doesn't recognize — applyPaymentResult() only updates orders.status
+ * when this returns non-null.
+ */
+export function derivePaymentTransition(
+  eventType: string,
+  sessionPaymentStatus?: string,
+): {
   paymentStatus: "captured" | "failed" | null;
   orderStatus: "paid" | "payment_failed" | null;
 } {
-  if (providerStatus === "captured") return { paymentStatus: "captured", orderStatus: "paid" };
-  if (providerStatus === "failed") return { paymentStatus: "failed", orderStatus: "payment_failed" };
+  if (eventType === "checkout.session.completed" && sessionPaymentStatus === "paid") {
+    return { paymentStatus: "captured", orderStatus: "paid" };
+  }
+  if (eventType === "checkout.session.expired") {
+    return { paymentStatus: "failed", orderStatus: "payment_failed" };
+  }
   return { paymentStatus: null, orderStatus: null };
 }
 
 export interface CheckoutInfo {
   paymentId: string;
-  provider: string;
-  providerOrderId: string;
-  amountCents: number;
-  currency: string;
-  keyId: string;
+  /** Redirect the customer's browser here — Stripe's own hosted Checkout
+   * page. */
+  url: string;
 }
 
 /**
@@ -64,20 +73,26 @@ export class PaymentsService {
    * Idempotent by (tenantId, idempotencyKey) — a real DB unique
    * constraint, not an app-level check-then-insert (see payments.ts
    * schema comment). The conflict check happens BEFORE any call to
-   * Razorpay, so a retried request never creates a second provider order:
+   * Stripe, so a retried request never creates a second Checkout Session:
    * `ON CONFLICT DO NOTHING RETURNING *` either returns the freshly
-   * inserted row (a genuinely new attempt — proceed to call Razorpay) or
-   * nothing (already exists — fetch and return its current state as-is).
+   * inserted row (a genuinely new attempt — proceed to call Stripe) or
+   * nothing (already exists — re-fetch the existing session's url).
    */
-  async initiatePayment(tenantId: string, orderId: string, customerId: string, idempotencyKey: string): Promise<CheckoutInfo | null> {
+  async initiatePayment(
+    tenantId: string,
+    orderId: string,
+    customerId: string,
+    idempotencyKey: string,
+    returnUrl: string,
+  ): Promise<CheckoutInfo | null> {
     // Resolved before the transaction below (its own separate read/tenant
     // context, not nested inside the write transaction) — the actual
     // server-side gate: a customer can never pay a store that hasn't
-    // activated payments, no matter what the storefront UI shows or
-    // hides. linkedAccount, if present, is what makes the Route split
-    // happen in createOrder() below.
-    const linkedAccount = await this.paymentAccounts.getForTenant(tenantId);
-    if (!linkedAccount?.live) {
+    // connected Stripe, no matter what the storefront UI shows or hides.
+    // linkedAccountId is what makes the destination-charge split happen
+    // in createCheckoutSession() below.
+    const connectAccount = await this.paymentAccounts.getForTenant(tenantId);
+    if (!connectAccount?.live) {
       throw new BadRequestException("This store hasn't set up payments yet");
     }
 
@@ -95,32 +110,31 @@ export class PaymentsService {
 
         const [inserted] = await tx
           .insert(payments)
-          .values({ tenantId, orderId, idempotencyKey, amountCents: order.subtotalCents, currency: "INR" })
+          .values({ tenantId, orderId, idempotencyKey, amountCents: order.subtotalCents, currency: "aed" })
           .onConflictDoNothing({ target: [payments.tenantId, payments.idempotencyKey] })
           .returning();
 
         if (inserted) {
-          // Genuinely new — create the provider order now, inside the same
-          // transaction as the row that reserves this idempotency key, so
-          // a crash between the two never leaves an orphaned Razorpay
-          // order with no local record of it.
-          const result = await this.gateway.createOrder({
+          // Genuinely new — create the Checkout Session now, inside the
+          // same transaction as the row that reserves this idempotency
+          // key, so a crash between the two never leaves an orphaned
+          // Stripe session with no local record of it.
+          const result = await this.gateway.createCheckoutSession({
             amountCents: inserted.amountCents,
             currency: inserted.currency,
             receipt: inserted.id,
-            // linkedAccount.live was already confirmed above, before this
-            // transaction started — linkedAccountId is guaranteed non-null
-            // whenever live is true (set together in the same update, see
-            // PaymentAccountsService.refreshStatus()).
-            linkedAccountId: linkedAccount.linkedAccountId!,
+            connectedAccountId: connectAccount.linkedAccountId!,
+            successUrl: `${returnUrl}?paid=1`,
+            cancelUrl: `${returnUrl}?canceled=1`,
+            idempotencyKey,
           });
           const [updated] = await tx
             .update(payments)
-            .set({ providerOrderId: result.providerOrderId, updatedAt: new Date() })
+            .set({ providerOrderId: result.providerSessionId, updatedAt: new Date() })
             .where(eq(payments.id, inserted.id))
             .returning();
           await tx.insert(paymentOrderLookup).values({
-            providerOrderId: result.providerOrderId,
+            providerOrderId: result.providerSessionId,
             tenantId,
             orderId,
             paymentId: inserted.id,
@@ -128,107 +142,51 @@ export class PaymentsService {
           if (order.status !== "awaiting_payment") {
             await tx.update(orders).set({ status: "awaiting_payment", updatedAt: new Date() }).where(eq(orders.id, orderId));
           }
-          return this.toCheckoutInfo(updated);
+          return { paymentId: updated!.id, url: result.url };
         }
 
         // Conflict — an attempt with this idempotency key already exists.
-        // No second call to Razorpay; return the existing row's state.
+        // No second call to Stripe; re-fetch the existing session's url
+        // (Checkout Session urls stay valid until the session completes
+        // or expires).
         const [existing] = await tx
           .select()
           .from(payments)
           .where(and(eq(payments.tenantId, tenantId), eq(payments.idempotencyKey, idempotencyKey)))
           .limit(1);
         if (!existing || !existing.providerOrderId) {
-          // Shouldn't happen — a row exists but never got a providerOrderId,
-          // meaning a previous attempt crashed between the insert and the
-          // Razorpay call. Surfacing this as a 400 rather than silently
-          // retrying the provider call from inside a conflict branch (that
-          // would reintroduce the exact double-call risk this is meant to
-          // prevent) — a genuinely new idempotency key on the client's next
-          // retry is the correct recovery path.
+          // Shouldn't happen — a row exists but never got a
+          // providerOrderId, meaning a previous attempt crashed between
+          // the insert and the Stripe call. Surfacing this as a 400
+          // rather than silently retrying the provider call from inside a
+          // conflict branch (that would reintroduce the exact
+          // double-call risk this is meant to prevent) — a genuinely new
+          // idempotency key on the client's next retry is the correct
+          // recovery path.
           throw new BadRequestException("A previous payment attempt is in an inconsistent state — retry with a new request");
         }
-        return this.toCheckoutInfo(existing);
-      }),
-    );
-  }
-
-  private toCheckoutInfo(row: typeof payments.$inferSelect): CheckoutInfo {
-    if (!row.providerOrderId) throw new BadRequestException("Payment has no provider order yet");
-    return {
-      paymentId: row.id,
-      provider: row.provider,
-      providerOrderId: row.providerOrderId,
-      amountCents: row.amountCents,
-      currency: row.currency,
-      keyId: this.gateway.getPublicKey(),
-    };
-  }
-
-  /**
-   * The storefront's own optimistic confirmation path, immediately after
-   * Razorpay Checkout's client-side `handler` callback fires — NOT the
-   * authoritative source of truth (the webhook, handleWebhookEvent(),
-   * is). Verifies the signature, then re-fetches the payment from
-   * Razorpay directly (never trusts the client-echoed status alone) before
-   * updating anything — a browser reporting "success" is not proof a
-   * payment actually captured.
-   */
-  async verifyClientPayment(tenantId: string, orderId: string, customerId: string, dto: VerifyPaymentDto) {
-    const valid = this.gateway.verifyPaymentSignature({
-      providerOrderId: dto.razorpayOrderId,
-      providerPaymentId: dto.razorpayPaymentId,
-      signature: dto.razorpaySignature,
-    });
-    if (!valid) throw new UnauthorizedException("Payment signature verification failed");
-
-    const fetched = await this.gateway.fetchPayment(dto.razorpayPaymentId);
-
-    return this.dbRouter.write((db) =>
-      withTenantContext(db, tenantId, async (tx) => {
-        const [payment] = await tx
-          .select()
-          .from(payments)
-          .where(and(eq(payments.tenantId, tenantId), eq(payments.idempotencyKey, dto.idempotencyKey)))
-          .limit(1);
-        if (!payment || payment.orderId !== orderId || payment.providerOrderId !== dto.razorpayOrderId) {
-          throw new NotFoundException("Payment not found for this order");
+        const session = await this.gateway.fetchCheckoutSession(existing.providerOrderId);
+        if (!session.url) {
+          throw new BadRequestException("This payment attempt has already completed or expired — retry with a new request");
         }
-
-        const [order] = await tx
-          .select()
-          .from(orders)
-          .where(and(eq(orders.id, orderId), eq(orders.customerId, customerId)))
-          .limit(1);
-        if (!order) throw new NotFoundException("Order not found");
-
-        return this.applyPaymentResult(tx, payment, order.id, {
-          providerPaymentId: dto.razorpayPaymentId,
-          status: fetched.status,
-          amountCents: fetched.amountCents,
-        });
+        return { paymentId: existing.id, url: session.url };
       }),
     );
   }
 
   /**
-   * The authoritative confirmation path — Razorpay's server-to-server
+   * The authoritative confirmation path — Stripe's server-to-server
    * webhook, not anything the browser reports. Signature verification
-   * (RazorpaySignatureGuard) has already run before this method is even
+   * (StripeSignatureGuard) has already run before this method is even
    * called; this method's own job is tenant resolution + idempotency +
    * the actual state update.
    */
-  async handleWebhookEvent(rawBody: string): Promise<void> {
-    const body = JSON.parse(rawBody) as {
-      event: string;
-      created_at?: number;
-      payload?: { payment?: { entity?: { id: string; order_id: string; status: string; amount: number } } };
-    };
-    const paymentEntity = body.payload?.payment?.entity;
-    if (!paymentEntity?.order_id) {
-      this.logger.warn(`Webhook event "${body.event}" had no payment.entity.order_id — ignoring`);
+  async handleWebhookEvent(event: Stripe.Event): Promise<void> {
+    if (event.type !== "checkout.session.completed" && event.type !== "checkout.session.expired") {
+      this.logger.log(`Webhook event "${event.type}" — not one this codebase acts on, ignoring`);
       return;
     }
+    const session = event.data.object as Stripe.Checkout.Session;
 
     // Resolve tenant BEFORE any tenant context exists — payment_order_lookup
     // is deliberately not RLS-protected for exactly this read. See its own
@@ -237,34 +195,36 @@ export class PaymentsService {
       db
         .select()
         .from(paymentOrderLookup)
-        .where(eq(paymentOrderLookup.providerOrderId, paymentEntity.order_id))
+        .where(eq(paymentOrderLookup.providerOrderId, session.id))
         .limit(1)
         .then((rows) => rows[0] ?? null),
     );
     if (!lookup) {
-      this.logger.warn(`Webhook for unknown providerOrderId ${paymentEntity.order_id} — ignoring`);
+      this.logger.warn(`Webhook for unknown providerOrderId ${session.id} — ignoring`);
       return;
     }
 
     await this.dbRouter.write((db) =>
       withTenantContext(db, lookup.tenantId, async (tx) => {
-        const providerEventId = this.resolveEventId(body, paymentEntity.id);
-        const [event] = await tx
+        const [inserted] = await tx
           .insert(paymentEvents)
           .values({
             tenantId: lookup.tenantId,
             paymentId: lookup.paymentId,
-            eventType: body.event,
-            providerEventId,
-            payload: body,
+            eventType: event.type,
+            // Stripe's own event.id — always present, unlike Razorpay's
+            // payload (which needed a derived-hash fallback, CLAUDE.md bug
+            // #20). Stable across redeliveries of the same event.
+            providerEventId: event.id,
+            payload: event as unknown as Record<string, unknown>,
           })
           .onConflictDoNothing({ target: [paymentEvents.tenantId, paymentEvents.providerEventId] })
           .returning();
 
-        if (!event) {
+        if (!inserted) {
           // Already processed this exact delivery — this is what stops
-          // Razorpay's retry loop from repeating the side effects below.
-          this.logger.log(`Duplicate webhook delivery ${providerEventId} — no-op`);
+          // Stripe's retry loop from repeating the side effects below.
+          this.logger.log(`Duplicate webhook delivery ${event.id} — no-op`);
           return;
         }
 
@@ -274,40 +234,28 @@ export class PaymentsService {
           return;
         }
 
-        await this.applyPaymentResult(tx, payment, lookup.orderId, {
-          providerPaymentId: paymentEntity.id,
-          status: paymentEntity.status,
-          amountCents: paymentEntity.amount,
-        });
+        await this.applyPaymentResult(tx, payment, lookup.tenantId, lookup.orderId, event.type, session);
       }),
     );
-  }
-
-  /** X-Razorpay-Event-Id isn't consistently documented as always present
-   * across API/account versions — falls back to a deterministic hash of
-   * event+payment id+timestamp, which is stable across redeliveries of
-   * the exact same event (Razorpay doesn't change these fields on
-   * retry). NEEDS RECONFIRMATION against a real test-mode webhook
-   * delivery before treating this fallback path as fully proven — flagged
-   * here and in docs/payments.md rather than silently assumed correct. */
-  private resolveEventId(body: { event: string; created_at?: number }, paymentId: string): string {
-    return createHash("sha256").update(`${body.event}:${paymentId}:${body.created_at ?? ""}`).digest("hex");
   }
 
   private async applyPaymentResult(
     tx: Db,
     payment: typeof payments.$inferSelect,
+    tenantId: string,
     orderId: string,
-    result: { providerPaymentId: string; status: string; amountCents: number },
+    eventType: string,
+    session: Stripe.Checkout.Session,
   ) {
-    const { paymentStatus, orderStatus } = derivePaymentTransition(result.status);
+    const { paymentStatus, orderStatus } = derivePaymentTransition(eventType, session.payment_status);
+    const providerPaymentId = typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
 
     await tx
       .update(payments)
       .set({
-        providerPaymentId: result.providerPaymentId,
+        providerPaymentId: providerPaymentId ?? payment.providerPaymentId,
         status: paymentStatus ?? payment.status,
-        failureReason: paymentStatus === "failed" ? "Provider reported payment failure" : payment.failureReason,
+        failureReason: paymentStatus === "failed" ? "Checkout session expired or was abandoned" : payment.failureReason,
         updatedAt: new Date(),
       })
       .where(eq(payments.id, payment.id));
@@ -316,6 +264,17 @@ export class PaymentsService {
       await tx.update(orders).set({ status: orderStatus, updatedAt: new Date() }).where(eq(orders.id, orderId));
     }
 
-    return { status: result.status, captured: paymentStatus === "captured" };
+    // Outbox — written in this same transaction as the state change it
+    // reports, so it's exactly as durable as the change itself (see
+    // outbox-events.ts's own comment). apps/workers picks this up async;
+    // core-api never touches Redis/BullMQ directly here, keeping the
+    // webhook handler's own commit fast regardless of queue health.
+    if (orderStatus === "paid") {
+      await tx.insert(outboxEvents).values({
+        tenantId,
+        eventType: "order.paid",
+        payload: { orderId, paymentId: payment.id },
+      });
+    }
   }
 }

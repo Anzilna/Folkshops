@@ -37,17 +37,33 @@ describe("isPayableOrderStatus", () => {
 });
 
 describe("derivePaymentTransition", () => {
-  test("captured -> payment captured, order paid", () => {
-    expect(derivePaymentTransition("captured")).toEqual({ paymentStatus: "captured", orderStatus: "paid" });
+  test("checkout.session.completed + paid -> payment captured, order paid", () => {
+    expect(derivePaymentTransition("checkout.session.completed", "paid")).toEqual({
+      paymentStatus: "captured",
+      orderStatus: "paid",
+    });
   });
 
-  test("failed -> payment failed, order payment_failed", () => {
-    expect(derivePaymentTransition("failed")).toEqual({ paymentStatus: "failed", orderStatus: "payment_failed" });
+  test("checkout.session.completed + unpaid -> no transition (async payment method still pending)", () => {
+    expect(derivePaymentTransition("checkout.session.completed", "unpaid")).toEqual({
+      paymentStatus: null,
+      orderStatus: null,
+    });
   });
 
-  test.each(["created", "authorized", "refunded"])("%s is not a terminal outcome — no transition", (status) => {
-    expect(derivePaymentTransition(status)).toEqual({ paymentStatus: null, orderStatus: null });
+  test("checkout.session.expired -> payment failed, order payment_failed", () => {
+    expect(derivePaymentTransition("checkout.session.expired")).toEqual({
+      paymentStatus: "failed",
+      orderStatus: "payment_failed",
+    });
   });
+
+  test.each(["payment_intent.succeeded", "charge.refunded", "account.updated"])(
+    "%s is not an event this codebase acts on — no transition",
+    (eventType) => {
+      expect(derivePaymentTransition(eventType)).toEqual({ paymentStatus: null, orderStatus: null });
+    },
+  );
 });
 
 // A thenable chain object: awaiting it directly resolves to `result`
@@ -70,26 +86,28 @@ function chain(result: unknown) {
 
 describe("PaymentsService.initiatePayment — idempotency short-circuit", () => {
   const order = { id: "order-1", customerId: "cust-1", status: "pending", subtotalCents: 50000 };
+  const returnUrl = "https://nike.folkshops.test/orders/order-1";
   // Both tests here are about idempotency, not the payments-enabled gate
   // itself — that gate's own behavior (BadRequestException when the
   // store hasn't activated payments) is a separate, simpler unit test
   // below. Here the gate always passes, with a fixed linked account id.
-  const liveAccount = { getForTenant: jest.fn().mockResolvedValue({ live: true, linkedAccountId: "acc_test123" }) } as unknown as PaymentAccountsService;
+  const liveAccount = { getForTenant: jest.fn().mockResolvedValue({ live: true, linkedAccountId: "acct_test123" }) } as unknown as PaymentAccountsService;
   const existingPayment = {
     id: "pay-1",
     tenantId: "tenant-1",
     orderId: "order-1",
     idempotencyKey: "key-1",
     amountCents: 50000,
-    currency: "INR",
-    provider: "razorpay",
-    providerOrderId: "order_already_created",
+    currency: "aed",
+    provider: "stripe",
+    providerOrderId: "cs_already_created",
     status: "created",
   };
 
   test("a retried idempotency key never calls the provider a second time", async () => {
-    const createOrder = jest.fn();
-    const gateway = { createOrder, getPublicKey: () => "rzp_test_key" } as unknown as PaymentProvider;
+    const createCheckoutSession = jest.fn();
+    const fetchCheckoutSession = jest.fn().mockResolvedValue({ url: "https://checkout.stripe.com/c/pay/cs_already_created" });
+    const gateway = { createCheckoutSession, fetchCheckoutSession } as unknown as PaymentProvider;
 
     const db = {
       // First select() call is the order lookup, second is the
@@ -104,25 +122,22 @@ describe("PaymentsService.initiatePayment — idempotency short-circuit", () => 
     const dbRouter = { write: (fn: (db: unknown) => unknown) => fn(db) } as unknown as DbRouter;
 
     const service = new PaymentsService(dbRouter, gateway, liveAccount);
-    const result = await service.initiatePayment("tenant-1", "order-1", "cust-1", "key-1");
+    const result = await service.initiatePayment("tenant-1", "order-1", "cust-1", "key-1", returnUrl);
 
-    expect(createOrder).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      paymentId: "pay-1",
-      provider: "razorpay",
-      providerOrderId: "order_already_created",
-      amountCents: 50000,
-      currency: "INR",
-      keyId: "rzp_test_key",
-    });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(fetchCheckoutSession).toHaveBeenCalledWith("cs_already_created");
+    expect(result).toEqual({ paymentId: "pay-1", url: "https://checkout.stripe.com/c/pay/cs_already_created" });
   });
 
   test("a genuinely new idempotency key does call the provider once", async () => {
-    const createOrder = jest.fn().mockResolvedValue({ providerOrderId: "order_new" });
-    const gateway = { createOrder, getPublicKey: () => "rzp_test_key" } as unknown as PaymentProvider;
+    const createCheckoutSession = jest.fn().mockResolvedValue({
+      providerSessionId: "cs_new",
+      url: "https://checkout.stripe.com/c/pay/cs_new",
+    });
+    const gateway = { createCheckoutSession } as unknown as PaymentProvider;
 
     const freshRow = { ...existingPayment, id: "pay-2", idempotencyKey: "key-2", providerOrderId: null };
-    const updatedRow = { ...freshRow, providerOrderId: "order_new" };
+    const updatedRow = { ...freshRow, providerOrderId: "cs_new" };
 
     const db = {
       select: jest.fn().mockReturnValueOnce(chain([order])),
@@ -142,32 +157,35 @@ describe("PaymentsService.initiatePayment — idempotency short-circuit", () => 
     const dbRouter = { write: (fn: (db: unknown) => unknown) => fn(db) } as unknown as DbRouter;
 
     const service = new PaymentsService(dbRouter, gateway, liveAccount);
-    const result = await service.initiatePayment("tenant-1", "order-1", "cust-1", "key-2");
+    const result = await service.initiatePayment("tenant-1", "order-1", "cust-1", "key-2", returnUrl);
 
-    expect(createOrder).toHaveBeenCalledTimes(1);
-    expect(createOrder).toHaveBeenCalledWith({
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(createCheckoutSession).toHaveBeenCalledWith({
       amountCents: 50000,
-      currency: "INR",
+      currency: "aed",
       receipt: "pay-2",
-      linkedAccountId: "acc_test123",
+      connectedAccountId: "acct_test123",
+      successUrl: `${returnUrl}?paid=1`,
+      cancelUrl: `${returnUrl}?canceled=1`,
+      idempotencyKey: "key-2",
     });
-    expect(result?.providerOrderId).toBe("order_new");
+    expect(result).toEqual({ paymentId: "pay-2", url: "https://checkout.stripe.com/c/pay/cs_new" });
   });
 });
 
 describe("PaymentsService.initiatePayment — payments-enabled gate", () => {
   test("a store that hasn't activated payments rejects /pay before touching the DB", async () => {
-    const createOrder = jest.fn();
-    const gateway = { createOrder, getPublicKey: () => "rzp_test_key" } as unknown as PaymentProvider;
+    const createCheckoutSession = jest.fn();
+    const gateway = { createCheckoutSession } as unknown as PaymentProvider;
     const notLive = { getForTenant: jest.fn().mockResolvedValue(null) } as unknown as PaymentAccountsService;
     const dbRouter = { write: jest.fn() } as unknown as DbRouter;
 
     const service = new PaymentsService(dbRouter, gateway, notLive);
 
-    await expect(service.initiatePayment("tenant-1", "order-1", "cust-1", "key-1")).rejects.toThrow(
-      "This store hasn't set up payments yet",
-    );
-    expect(createOrder).not.toHaveBeenCalled();
+    await expect(
+      service.initiatePayment("tenant-1", "order-1", "cust-1", "key-1", "https://nike.folkshops.test/orders/order-1"),
+    ).rejects.toThrow("This store hasn't set up payments yet");
+    expect(createCheckoutSession).not.toHaveBeenCalled();
     expect(dbRouter.write).not.toHaveBeenCalled();
   });
 });

@@ -8,7 +8,12 @@ import { OrderStatusBadge, type OrderRow } from "./order-shared";
 
 const STATUS_FILTER_OPTIONS = [
   { value: "pending", label: "Pending" },
+  { value: "awaiting_payment", label: "Awaiting payment" },
+  { value: "paid", label: "Paid" },
+  { value: "payment_failed", label: "Payment failed" },
   { value: "cancelled", label: "Cancelled" },
+  { value: "refunded", label: "Refunded" },
+  { value: "partially_refunded", label: "Partially refunded" },
 ];
 
 export default function OrdersPage() {

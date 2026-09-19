@@ -1,51 +1,42 @@
+import type Stripe from "stripe";
+
 /**
  * Same swap-seam pattern as OTP_PROVIDER (storefront/otp-provider.ts) —
- * one Symbol token, one interface, bound via `useClass` in a module. A
- * second gateway (Cashfree) implements this same interface and swaps in
- * via the module binding; nothing in PaymentsService or checkout/webhook
- * code needs to change.
+ * one Symbol token, one interface, bound via `useClass` in a module.
+ * `StripeProvider` is the only implementation. A second gateway would
+ * implement this same interface; nothing in PaymentsService,
+ * PaymentAccountsService, or the checkout/webhook controllers would need
+ * to change.
  */
 export const PAYMENT_GATEWAY = Symbol("PAYMENT_GATEWAY");
 
-export interface CreateOrderInput {
+export interface CreateCheckoutSessionInput {
   amountCents: number;
+  /** ISO currency code, lowercase (Stripe's own convention) — e.g. "aed". */
   currency: string;
-  /** Our own payment id — passed as the provider's "receipt" field so a
-   * provider-side order can always be traced back to our row, even before
-   * providerOrderId is known to us. */
+  /** Our own payment id — carried as client_reference_id so a Stripe
+   * session can always be traced back to our row. */
   receipt: string;
-  /** Route: split this order's payment to a tenant's Linked Account at
-   * capture time. Omitted entirely for a platform-level (Slice 1/2)
-   * payment that isn't routed anywhere. */
-  linkedAccountId?: string;
+  /** Stripe Connect account (destination charge target) money is routed
+   * to at capture time. */
+  connectedAccountId: string;
+  successUrl: string;
+  cancelUrl: string;
+  /** Passed to Stripe as its own request Idempotency-Key, on top of our
+   * DB-level unique constraint — belt and suspenders, not a replacement
+   * for it (see PaymentsService.initiatePayment()'s own comment). */
+  idempotencyKey: string;
 }
 
-export interface CreateOrderResult {
-  providerOrderId: string;
-}
-
-export interface FetchPaymentResult {
-  status: string;
-  amountCents: number;
-  currency: string;
-}
-
-export interface VerifyPaymentInput {
-  providerOrderId: string;
-  providerPaymentId: string;
-  signature: string;
-}
-
-export interface VerifyWebhookInput {
-  /** The exact raw request body bytes, as a string — never the
-   * re-serialized/parsed JSON, which is not byte-identical to what
-   * Razorpay actually signed. */
-  rawBody: string;
-  signature: string;
+export interface CreateCheckoutSessionResult {
+  providerSessionId: string;
+  /** Redirect the customer's browser here — Stripe's own hosted Checkout
+   * page, not anything Folkshops renders. */
+  url: string;
 }
 
 export interface RefundInput {
-  providerPaymentId: string;
+  providerPaymentIntentId: string;
   /** Omit for a full refund of whatever remains refundable. */
   amountCents?: number;
 }
@@ -55,68 +46,55 @@ export interface RefundResult {
   status: string;
 }
 
-/** Route/Linked Account creation — the KYC-style onboarding fields
- * Razorpay's v2/accounts (Partner sub-merchant) API requires. See
- * RazorpayProvider.createLinkedAccount() for the exact field mapping. */
-export interface CreateLinkedAccountInput {
-  email: string;
-  phone: string;
-  legalBusinessName: string;
-  businessType: string;
-  contactName: string;
-  category: string;
-  subcategory: string;
-  pan?: string;
-  gst?: string;
-  registeredAddress: {
-    street1: string;
-    street2?: string;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: string;
-  };
+/** Connect account creation — Step 1 of "Connect Stripe". Deliberately
+ * takes nothing but the fact that the account should exist: Stripe's own
+ * hosted Account Link onboarding collects every KYC field itself (see
+ * createAccountLink()'s comment), so unlike the old Razorpay Route flow
+ * this codebase collects zero business details up front. */
+export interface CreateConnectAccountResult {
+  accountId: string;
 }
 
-export interface CreateLinkedAccountResult {
-  linkedAccountId: string;
-  status: string;
+/** Step 2 — the actual hosted onboarding redirect (the literal "Connect
+ * Stripe" button target). refreshUrl/returnUrl are both required by
+ * Stripe: refreshUrl is where the merchant lands if the link expired or
+ * was already used (call this again to mint a fresh one); returnUrl is
+ * where they land after exiting the flow, successfully or not — neither
+ * URL carries any state, the account must be re-fetched to know what
+ * actually happened (see ConnectAccountStatus). */
+export interface CreateAccountLinkResult {
+  url: string;
 }
 
-export interface LinkedAccountStatus {
-  status: string;
-  /** true only once Razorpay's own account review has completed — this is
-   * the actual payment-acceptance gate, not `status` itself (Razorpay's
-   * `status` string doesn't map 1:1 to "can this account take money
-   * yet"). See RazorpayProvider.getLinkedAccountStatus()'s comment. */
-  live: boolean;
-  activatedAt: Date | null;
-}
-
-export interface TransferToLinkedAccountInput {
-  providerPaymentId: string;
-  linkedAccountId: string;
-  amountCents: number;
-}
-
-export interface TransferResult {
-  transferId: string;
-  status: string;
+export interface ConnectAccountStatus {
+  /** The actual payment-acceptance gate — see PaymentAccountsService's
+   * isPaymentsEnabled(). Stripe's `status`-shaped field doesn't exist on
+   * an Account the way Razorpay had one; charges_enabled/payouts_enabled/
+   * details_submitted together are what Stripe itself recommends
+   * checking instead. */
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
 }
 
 export interface PaymentProvider {
-  /** The provider's public client identifier (Razorpay's key_id) — safe
-   * to return to the browser, unlike the paired secret. The checkout
-   * response the storefront receives carries this so it can initialize
-   * the provider's own JS SDK; a future Cashfree implementation returns
-   * whatever its equivalent public app id is. */
-  getPublicKey(): string;
-  createOrder(input: CreateOrderInput): Promise<CreateOrderResult>;
-  fetchPayment(providerPaymentId: string): Promise<FetchPaymentResult>;
-  verifyPaymentSignature(input: VerifyPaymentInput): boolean;
-  verifyWebhookSignature(input: VerifyWebhookInput): boolean;
+  createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CreateCheckoutSessionResult>;
+  /** Re-fetches a Checkout Session from Stripe directly — never trusts a
+   * client-reported "success" alone (mirrors the old Razorpay posture,
+   * see PaymentsService's own comment). */
+  fetchCheckoutSession(providerSessionId: string): Promise<Stripe.Checkout.Session>;
+  /** Verifies AND parses in one step (constructEvent does both) — a
+   * signature-valid payload that failed to parse isn't a real event
+   * either, so there's no meaningful "verified but unparsed" state to
+   * return separately. Throws on an invalid signature or malformed body;
+   * the caller (StripeSignatureGuard) converts that into a 401. */
+  constructWebhookEvent(input: { rawBody: string; signature: string }): Stripe.Event;
   refund(input: RefundInput): Promise<RefundResult>;
-  createLinkedAccount(input: CreateLinkedAccountInput): Promise<CreateLinkedAccountResult>;
-  getLinkedAccountStatus(linkedAccountId: string): Promise<LinkedAccountStatus>;
-  transferToLinkedAccount(input: TransferToLinkedAccountInput): Promise<TransferResult>;
+  /** contactEmail — confirmed live against a real Stripe account: v2's
+   * `recipient` configuration 400s at creation without one. The logged-in
+   * staff member's own email (already known, already verified via their
+   * session) — not a new field Folkshops asks the merchant to fill in. */
+  createConnectAccount(contactEmail: string): Promise<CreateConnectAccountResult>;
+  createAccountLink(accountId: string, refreshUrl: string, returnUrl: string): Promise<CreateAccountLinkResult>;
+  getConnectAccountStatus(accountId: string): Promise<ConnectAccountStatus>;
 }
