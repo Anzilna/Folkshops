@@ -124,6 +124,8 @@ services:
       DATABASE_REPLICA_URL: postgres://folkshops_app:folkshops_app@postgres:5432/folkshops_dev
       MIGRATIONS_DATABASE_URL: postgres://folkshops:folkshops@postgres:5432/folkshops_dev
       REDIS_URL: redis://redis:6379
+      CACHE_STORE_TTL_SECONDS: 300
+      CACHE_PRODUCTS_LIST_TTL_SECONDS: 30
       JWT_SECRET: dev-only-change-me
       PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
       CUSTOMER_JWT_SECRET: dev-only-change-me-three

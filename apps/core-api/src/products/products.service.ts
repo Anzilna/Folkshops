@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { and, asc, count, eq, ilike, isNull, SQL } from "drizzle-orm";
 import { bulkImport, BulkImportResult } from "../common/bulk-import.util";
 import { CsvColumn, toCsv } from "../common/csv.util";
@@ -7,9 +8,11 @@ import { DbRouter } from "../database/db-router";
 import type { Db } from "../database/tokens";
 import { productImages, products } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
+import { CacheService } from "../redis/cache.service";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { QueryProductsDto } from "./dto/query-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
+import { buildProductListCacheKey, productsAllListsTag, productTag } from "./products-cache";
 
 const SORT_COLUMNS = {
   name: products.name,
@@ -55,11 +58,19 @@ async function replaceGallery(tx: Db, tenantId: string, productId: string, urls:
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly dbRouter: DbRouter) {}
+  private readonly listTtlSeconds: number;
+
+  constructor(
+    private readonly dbRouter: DbRouter,
+    private readonly cache: CacheService,
+    config: ConfigService,
+  ) {
+    this.listTtlSeconds = Number(config.get<string>("CACHE_PRODUCTS_LIST_TTL_SECONDS") ?? 30);
+  }
 
   async create(tenantId: string, input: CreateProductDto) {
     const { images, ...productInput } = input;
-    return this.dbRouter.write((db) =>
+    const created = await this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .insert(products)
@@ -69,35 +80,47 @@ export class ProductsService {
         return { ...product, images: images ?? [] };
       }),
     );
+    // A new product has no per-product tag yet (see products-cache.ts's
+    // own comment on productsAllListsTag) — only the tenant-wide tag can
+    // make it show up in an already-cached list view immediately.
+    await this.cache.invalidateTag(productsAllListsTag(tenantId));
+    return created;
   }
 
   /**
    * Paginated/sorted/filtered — "eventual" (replica-tolerant, same
-   * reasoning as before: this is catalog browsing, non-critical staleness).
-   * Deliberately NOT cached, unlike the pre-pagination version of this
-   * method: caching was viable for exactly one query shape ("all products,
-   * no filters"), but every page/sort/filter combination is a distinct
-   * cache key, and CacheService only supports deleting one exact key on
-   * invalidate() — there's no wildcard delete, so a write could never
-   * cleanly invalidate every cached variant. A merchant filtering their
-   * own products right after editing one and seeing stale results would be
-   * a worse regression than losing a 30s cache on a read that already hits
-   * the replica.
+   * reasoning as before: this is catalog browsing, non-critical staleness)
+   * for the underlying DB read on a cache miss. Cached, cache-aside, tag-
+   * based — every cached page is indexed under one tag per product it
+   * contains (invalidated precisely by update()/delete()) plus one
+   * tenant-wide tag (invalidated by create() — see products-cache.ts for
+   * why that split exists). Re-enabled after being pulled from the pre-
+   * pagination version of this method, which had no way to invalidate a
+   * write against the many distinct page/sort/filter cache-key variants a
+   * paginated endpoint produces; the tag mechanism is what closes that gap
+   * (see CacheService's own comment for the full mechanism).
    */
   async list(tenantId: string, query: QueryProductsDto): Promise<PaginatedResult<typeof products.$inferSelect>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const where = buildFilters(tenantId, query);
     const orderBy = resolveSort(query.sortBy, query.sortDir, SORT_COLUMNS, "createdAt");
+    const cacheKey = buildProductListCacheKey(tenantId, query);
 
-    return this.dbRouter.read("eventual", (db) =>
-      withTenantContext(db, tenantId, async (tx) => {
-        const [rows, [{ total }]] = await Promise.all([
-          tx.select().from(products).where(where).orderBy(orderBy).limit(limit).offset(offsetFor(page, limit)),
-          tx.select({ total: count() }).from(products).where(where),
-        ]);
-        return paginatedResult(rows, total, page, limit);
-      }),
+    return this.cache.getOrSetTagged(
+      cacheKey,
+      this.listTtlSeconds,
+      () =>
+        this.dbRouter.read("eventual", (db) =>
+          withTenantContext(db, tenantId, async (tx) => {
+            const [rows, [{ total }]] = await Promise.all([
+              tx.select().from(products).where(where).orderBy(orderBy).limit(limit).offset(offsetFor(page, limit)),
+              tx.select({ total: count() }).from(products).where(where),
+            ]);
+            return paginatedResult(rows, total, page, limit);
+          }),
+        ),
+      (result) => [productsAllListsTag(tenantId), ...result.data.map((product) => productTag(tenantId, product.id))],
     );
   }
 
@@ -145,7 +168,7 @@ export class ProductsService {
 
   async update(tenantId: string, id: string, input: UpdateProductDto) {
     const { images, ...productInput } = input;
-    return this.dbRouter.write((db) =>
+    const updated = await this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .update(products)
@@ -158,6 +181,23 @@ export class ProductsService {
         return { ...product, images: gallery.map((g) => g.url) };
       }),
     );
+    // Invalidates BOTH tags: the fine-grained per-product tag (pages that
+    // already contained this product) and the tenant-wide tag (pages that
+    // don't contain it yet but might start matching it after this write —
+    // e.g. status draft -> active newly qualifying for a ?status=active
+    // page). update() can't tell which fields changed without a field-diff
+    // against the pre-update row, so it treats every update as potentially
+    // filter-relevant rather than leaving a narrow, hard-to-reason-about
+    // staleness window. Was previously fine-grained only, deliberately
+    // accepting that gap — see products-cache.ts's productsAllListsTag()
+    // comment for the full history; closed here at the cost of evicting
+    // every cached list page for the tenant on any single product edit,
+    // not just the ones the product was already on.
+    if (updated) {
+      await this.cache.invalidateTag(productTag(tenantId, id));
+      await this.cache.invalidateTag(productsAllListsTag(tenantId));
+    }
+    return updated;
   }
 
   /** Soft delete — sets deletedAt rather than removing the row, so an
@@ -169,7 +209,7 @@ export class ProductsService {
    * already-deleted (or nonexistent) id matches zero rows and returns
    * null, same as a genuine 404, rather than erroring. */
   async delete(tenantId: string, id: string) {
-    return this.dbRouter.write((db) =>
+    const deleted = await this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
         const [product] = await tx
           .update(products)
@@ -179,5 +219,10 @@ export class ProductsService {
         return product ?? null;
       }),
     );
+    // Fine-grained, and fully correct here (unlike update()) — removing a
+    // product only affects cached pages that already contained it; a page
+    // that never had it is unaffected either way, no filter-shift concern.
+    if (deleted) await this.cache.invalidateTag(productTag(tenantId, id));
+    return deleted;
   }
 }
