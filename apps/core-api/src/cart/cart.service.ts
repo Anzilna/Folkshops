@@ -48,6 +48,7 @@ export class CartService {
             quantity: cartItems.quantity,
             name: products.name,
             priceCents: products.priceCents,
+            imageUrl: products.imageUrl,
           })
           .from(cartItems)
           .innerJoin(products, eq(cartItems.productId, products.id))

@@ -123,6 +123,7 @@ export interface CartLine {
   name: string;
   priceCents: number;
   lineTotalCents: number;
+  imageUrl: string | null;
 }
 
 export interface Cart {

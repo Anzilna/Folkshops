@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch, notifyCartChanged, type Cart } from "../../lib/api";
 import { formatPrice } from "../../lib/format";
+import { ProductArt } from "../product-card";
 
 export default function CartPage() {
   const router = useRouter();
@@ -93,6 +94,9 @@ export default function CartPage() {
             <ul className="divide-y divide-border rounded-2xl border border-border">
               {cart.items.map((line) => (
                 <li key={line.productId} className="flex items-center gap-4 px-5 py-4">
+                  <Link href={`/products/${line.productId}`} className="shrink-0">
+                    <ProductArt product={line} className="h-16 w-16" />
+                  </Link>
                   <div className="min-w-0 flex-1">
                     <Link href={`/products/${line.productId}`} className="text-sm font-medium hover:underline underline-offset-4">
                       {line.name}
