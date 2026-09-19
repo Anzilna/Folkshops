@@ -8,9 +8,9 @@ export const productStatusEnum = pgEnum("product_status", ["draft", "active", "a
  * Tenant-owned — same RLS pattern as memberships (see
  * migrations/0004_enable-rls-products.sql).
  *
- * priceCents is an integer (smallest currency unit — paise for INR), not a
+ * priceCents is an integer (smallest currency unit — fils for AED), not a
  * decimal/float column: floats lose precision on money, and JS numbers
- * round-trip integers exactly but not arbitrary decimals, so ₹1,499.00 is
+ * round-trip integers exactly but not arbitrary decimals, so AED 1,499.00 is
  * stored as 149900, not 1499.00.
  */
 export const products = pgTable(

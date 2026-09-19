@@ -35,7 +35,7 @@ export default function EditProductPage() {
     <>
       <PageHeader
         title={product?.name ?? "Edit product"}
-        description={product ? `Added ${new Date(product.createdAt).toLocaleDateString("en-IN")}` : undefined}
+        description={product ? `Added ${new Date(product.createdAt).toLocaleDateString("en-AE")}` : undefined}
         actions={
           product && (
             <Button variant="outline" className="text-destructive" onClick={() => setConfirmOpen(true)}>

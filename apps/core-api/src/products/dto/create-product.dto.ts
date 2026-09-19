@@ -29,7 +29,7 @@ export class CreateProductDto {
   @IsString({ each: true })
   images?: string[];
 
-  /** Smallest currency unit (paise for INR) — see schema/products.ts. */
+  /** Smallest currency unit (fils for AED) — see schema/products.ts. */
   @IsInt()
   @Min(0)
   priceCents!: number;

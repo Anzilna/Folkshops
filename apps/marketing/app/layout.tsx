@@ -8,7 +8,7 @@ import "./globals.css";
 // ThemeProvider, same permanent decision as storefront.
 export const metadata: Metadata = {
   title: "Folkshops",
-  description: "The India-first platform for launching and running an online store.",
+  description: "The UAE-first platform for launching and running an online store.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="border-t border-border">
           <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-8 text-center text-xs text-muted-foreground sm:flex-row sm:justify-between sm:text-left">
             <span>&copy; {new Date().getFullYear()} Folkshops.</span>
-            <span>Built for merchants in India.</span>
+            <span>Built for merchants in the UAE.</span>
           </div>
         </footer>
       </body>

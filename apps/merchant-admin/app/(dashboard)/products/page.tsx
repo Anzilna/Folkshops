@@ -105,7 +105,7 @@ export default function ProductsPage() {
     { key: "status", header: "Status", sortable: true, render: (row) => <StatusBadge status={row.status} /> },
     { key: "isActive", header: "Active", render: (row) => <ActiveToggle row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /> },
     { key: "priceCents", header: "Price", sortable: true, align: "right", render: (row) => <span className="tabular-nums">{formatPrice(row.priceCents)}</span> },
-    { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
+    { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-AE")}</span> },
   ];
 
   return (

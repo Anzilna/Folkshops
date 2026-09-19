@@ -68,7 +68,7 @@ export default function CategoriesPage() {
     },
     { key: "description", header: "Description", render: (row) => <span className="text-muted-foreground">{row.description || "—"}</span> },
     { key: "isActive", header: "Active", render: (row) => <ActiveToggle row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /> },
-    { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
+    { key: "createdAt", header: "Added", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-AE")}</span> },
   ];
 
   return (

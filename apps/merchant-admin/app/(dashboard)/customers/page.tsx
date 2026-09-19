@@ -78,7 +78,7 @@ export default function CustomersPage() {
       ),
     },
     { key: "isActive", header: "Active", render: (row) => <ActiveToggle row={row} tenantSlug={tenantSlug} onSaved={() => setRefreshKey((k) => k + 1)} /> },
-    { key: "createdAt", header: "Customer since", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-IN")}</span> },
+    { key: "createdAt", header: "Customer since", sortable: true, align: "right", render: (row) => <span className="text-muted-foreground">{new Date(row.createdAt).toLocaleDateString("en-AE")}</span> },
   ];
 
   return (

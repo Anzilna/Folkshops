@@ -158,7 +158,7 @@ async function main() {
       } while (usedNames.has(name));
       usedNames.add(name);
 
-      const priceCents = between(299, 8999) * 100; // whole-rupee prices, ₹299–₹8,999
+      const priceCents = between(299, 8999) * 100; // whole-dirham prices, AED 299–AED 8,999
       const roll = rand();
       const status = roll < 0.72 ? "active" : roll < 0.9 ? "draft" : "archived";
       const {

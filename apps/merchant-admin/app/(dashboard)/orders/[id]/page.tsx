@@ -55,7 +55,7 @@ export default function OrderDetailPage() {
     <>
       <PageHeader
         title={`Order ${short}`}
-        description={`Placed ${new Date(order.createdAt).toLocaleString("en-IN", { dateStyle: "long", timeStyle: "short" })}`}
+        description={`Placed ${new Date(order.createdAt).toLocaleString("en-AE", { dateStyle: "long", timeStyle: "short" })}`}
         actions={<OrderStatusBadge status={order.status} />}
       />
 

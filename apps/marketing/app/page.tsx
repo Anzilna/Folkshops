@@ -29,8 +29,8 @@ const FEATURES = [
   },
   {
     icon: "M12 2l2.4 7.2H22l-6 4.4 2.4 7.2L12 16.4 5.6 20.8 8 13.6l-6-4.4h7.6L12 2z",
-    title: "Priced for India, from day one",
-    description: "Every amount is stored and shown in rupees and paise natively — not retrofitted from a dollar-first system.",
+    title: "Priced for the UAE, from day one",
+    description: "Every amount is stored and shown in dirhams and fils natively — not retrofitted from a dollar-first system.",
   },
 ];
 
@@ -44,12 +44,12 @@ export default function HomePage() {
   return (
     <div className="flex flex-col">
       <section className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-6 py-20 sm:py-28">
-        <span className="fk-fade-in rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">India-first e-commerce, built for one store or many</span>
+        <span className="fk-fade-in rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">UAE-first e-commerce, built for one store or many</span>
         <h1 className="fk-fade-in mk-display max-w-3xl text-5xl font-semibold sm:text-6xl lg:text-7xl" style={{ animationDelay: "60ms" }}>
           Run your online store without renting someone else&apos;s.
         </h1>
         <p className="fk-fade-in max-w-xl text-lg text-muted-foreground" style={{ animationDelay: "120ms" }}>
-          Folkshops gives you a real storefront, a real dashboard, and real data isolation — built specifically for merchants selling in India.
+          Folkshops gives you a real storefront, a real dashboard, and real data isolation — built specifically for merchants selling in the UAE.
         </p>
         <div className="fk-fade-in flex flex-wrap items-center gap-3" style={{ animationDelay: "180ms" }}>
           <a

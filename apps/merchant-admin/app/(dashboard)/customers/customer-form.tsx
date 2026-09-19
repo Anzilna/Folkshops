@@ -51,7 +51,7 @@ export function CustomerForm({ customer, tenantSlug }: { customer: CustomerRow |
         <Field
           label="Phone"
           htmlFor="cu-phone"
-          hint={customer ? "The phone number is the customer's login and can't be changed here." : "Include the country code, e.g. +91 98765 43210."}
+          hint={customer ? "The phone number is the customer's login and can't be changed here." : "Include the country code, e.g. +971 50 123 4567."}
         >
           <Input id="cu-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required disabled={!!customer} autoFocus={!customer} />
         </Field>

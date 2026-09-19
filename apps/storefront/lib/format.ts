@@ -1,9 +1,9 @@
 export function formatPrice(cents: number): string {
-  return `₹${(cents / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+  return `AED ${(cents / 100).toLocaleString("en-AE", { minimumFractionDigits: 2 })}`;
 }
 
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-AE", { day: "numeric", month: "short", year: "numeric" });
 }
 
 /** Deterministic hue from a name — products have no images yet, so each

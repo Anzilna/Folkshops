@@ -149,7 +149,7 @@ export function ProductForm({ product, tenantSlug }: { product: ProductRow | nul
           <Field label="Additional photos" htmlFor="p-gallery" hint="Shown in the storefront's product gallery, in this order.">
             <ImageGalleryField value={images} onChange={setImages} tenantSlug={tenantSlug} />
           </Field>
-          <Field label="Price (INR)" htmlFor="p-price">
+          <Field label="Price (AED)" htmlFor="p-price">
             <Input id="p-price" type="number" step="0.01" min="0" inputMode="decimal" value={priceRupees} onChange={(e) => setPriceRupees(e.target.value)} required />
           </Field>
           <Field label="Status" htmlFor="p-status">

@@ -30,7 +30,7 @@ export default function EditCustomerPage() {
     <>
       <PageHeader
         title={customer?.name || customer?.phone || "Edit customer"}
-        description={customer ? `Customer since ${new Date(customer.createdAt).toLocaleDateString("en-IN")}` : undefined}
+        description={customer ? `Customer since ${new Date(customer.createdAt).toLocaleDateString("en-AE")}` : undefined}
         actions={
           customer && (
             <Button variant="outline" className="text-destructive" onClick={() => setConfirmOpen(true)}>
