@@ -162,7 +162,27 @@ export class OrdersService {
       withTenantContext(db, tenantId, async (tx) => {
         const [order] = await tx.select().from(orders).where(eq(orders.id, id)).limit(1);
         if (!order) return null;
-        const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, id));
+        // imageUrl is a live join, not part of the order_items snapshot —
+        // unlike productName/priceCents (what was actually charged, must
+        // never change), a picture is just a display aid; showing the
+        // product's current image (or none, if it's since been removed)
+        // is fine, same live-read posture as CartService.getCart()'s own
+        // products.imageUrl join.
+        const items = await tx
+          .select({
+            id: orderItems.id,
+            tenantId: orderItems.tenantId,
+            orderId: orderItems.orderId,
+            productId: orderItems.productId,
+            productName: orderItems.productName,
+            priceCents: orderItems.priceCents,
+            quantity: orderItems.quantity,
+            createdAt: orderItems.createdAt,
+            imageUrl: products.imageUrl,
+          })
+          .from(orderItems)
+          .leftJoin(products, eq(orderItems.productId, products.id))
+          .where(eq(orderItems.orderId, id));
         return { ...order, items };
       }),
     );

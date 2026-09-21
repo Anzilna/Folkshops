@@ -12,6 +12,7 @@ interface OrderItem {
   productName: string;
   priceCents: number;
   quantity: number;
+  imageUrl: string | null;
 }
 
 interface OrderDetail extends OrderRow {
@@ -68,8 +69,16 @@ export default function OrderDetailPage() {
           </div>
           <ul className="divide-y divide-border">
             {order.items.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-4 px-6 py-3.5 text-sm">
-                <div className="min-w-0">
+              <li key={item.id} className="flex items-center gap-4 px-6 py-3.5 text-sm">
+                {item.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- external S3/MinIO URL
+                  <img src={item.imageUrl} alt="" className="h-11 w-11 shrink-0 rounded-md object-cover" />
+                ) : (
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground">
+                    {item.productName.charAt(0)}
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{item.productName}</p>
                   <p className="text-xs text-muted-foreground tabular-nums">
                     {formatPrice(item.priceCents)} &times; {item.quantity}
