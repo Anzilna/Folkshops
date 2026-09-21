@@ -1,0 +1,5 @@
+# Optional. Only needed when RERANKER_ENABLED=true — see
+# infrastructure/reranker/cross_encoder.py's lazy import and ADR 0011 for
+# why this is split out of requirements.txt (torch is heavy, most
+# deployments of this service will run with reranking off).
+sentence-transformers==3.3.1

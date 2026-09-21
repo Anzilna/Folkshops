@@ -1,6 +1,12 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 — same Postgres 16 binaries/data format as
+    # postgres:16-alpine, just with the `vector` extension pre-built (plain
+    # postgres:16-alpine ships none at all — confirmed live before
+    # apps/ai-service was scaffolded; see docs/decisions/0011). Additive to
+    # the existing volume, same "no data-directory reinit needed" class of
+    # change as the wal_level setting below.
+    image: pgvector/pgvector:pg16
     container_name: folkshops-postgres
     restart: unless-stopped
     # wal_level=logical + the replication-slot/sender limits are what make
@@ -289,6 +295,38 @@ services:
       - .:/app
       - core-api-root-node-modules:/app/node_modules
       - core-api-app-node-modules:/app/apps/core-api/node_modules
+
+  # Optional, same posture as core-api above — native `uvicorn`/`arq` on the
+  # host (see apps/ai-service/README.md) works identically and is the
+  # faster dev loop. folkshops_ai (database/init/02-ai-role.sql) is created
+  # on a fresh volume automatically via the same docker-entrypoint-initdb.d
+  # mount postgres already uses; on an existing volume, run
+  # scripts/bootstrap_ai_role.py once first (see that script's docstring).
+  ai-service:
+    build:
+      context: apps/ai-service
+      dockerfile: Dockerfile
+    container_name: folkshops-ai-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - apps/ai-service/.env
+    environment:
+      APP_ENV: development
+      PORT: 4400
+      DATABASE_URL: postgres://folkshops_ai:folkshops_ai@postgres:5432/folkshops_dev
+      MIGRATIONS_DATABASE_URL: postgres://folkshops:folkshops@postgres:5432/folkshops_dev
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-only-change-me
+      CUSTOMER_JWT_SECRET: dev-only-change-me-three
+      CORS_ORIGINS: http://localhost:3001
+      KAFKA_BROKERS: kafka:9094
+    ports:
+      - "4400:4400"
 
 volumes:
   folkshops-postgres-data:
