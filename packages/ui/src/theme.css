@@ -18,6 +18,29 @@
   --destructive-foreground: #ffffff;
   --success: #16a34a;
   --success-foreground: #ffffff;
+  /* Single data-viz hue for magnitude/change-over-time charts (revenue
+   * line, top-products bars) — deliberately not the same as --accent
+   * (UI chrome) or --destructive/--success (reserved status colors, never
+   * reused for a chart series per the dataviz skill). Validated against
+   * this exact --background with .claude's dataviz skill's
+   * validate_palette.js: light #2a78d6 passes contrast/lightness-band/
+   * chroma-floor against #ffffff, dark #3987e5 against #0a0a0a. */
+  --chart-data: #2a78d6;
+  /* Categorical set — for charts where each mark IS a distinct, named
+   * entity (a specific product), not a magnitude bucket, so color follows
+   * identity rather than rank (dataviz skill). Fixed hue order, never
+   * cycled arbitrarily. Validated against #ffffff: 3 of 8 slots (aqua/
+   * yellow/magenta) read below 3:1 contrast — the documented "relief
+   * rule" applies, so any chart using these must ship visible direct
+   * labels (never rely on the swatch alone). */
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-series-3: #1baf7a;
+  --chart-series-4: #eda100;
+  --chart-series-5: #e87ba4;
+  --chart-series-6: #008300;
+  --chart-series-7: #4a3aa7;
+  --chart-series-8: #e34948;
 }
 
 .dark {
@@ -32,6 +55,15 @@
   --destructive-foreground: #450a0a;
   --success: #4ade80;
   --success-foreground: #052e12;
+  --chart-data: #3987e5;
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-series-3: #199e70;
+  --chart-series-4: #c98500;
+  --chart-series-5: #d55181;
+  --chart-series-6: #008300;
+  --chart-series-7: #9085e9;
+  --chart-series-8: #e66767;
 }
 
 /*
@@ -170,4 +202,13 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-chart-data: var(--chart-data);
+  --color-chart-series-1: var(--chart-series-1);
+  --color-chart-series-2: var(--chart-series-2);
+  --color-chart-series-3: var(--chart-series-3);
+  --color-chart-series-4: var(--chart-series-4);
+  --color-chart-series-5: var(--chart-series-5);
+  --color-chart-series-6: var(--chart-series-6);
+  --color-chart-series-7: var(--chart-series-7);
+  --color-chart-series-8: var(--chart-series-8);
 }

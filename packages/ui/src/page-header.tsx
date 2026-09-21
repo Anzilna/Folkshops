@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 /** Title row every admin page starts with — title/description on the
  * left, primary actions on the right — so the list, new, and edit pages
@@ -26,6 +26,18 @@ export function PageHeader({
 }
 
 /** A bordered surface for forms and detail views. */
-export function Card({ children, className = "" }: { children?: ReactNode; className?: string }) {
-  return <div className={`rounded-2xl border border-border bg-background p-6 shadow-sm ${className}`}>{children}</div>;
+export function Card({
+  children,
+  className = "",
+  style,
+}: {
+  children?: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div className={`rounded-2xl border border-border bg-background p-6 shadow-sm ${className}`} style={style}>
+      {children}
+    </div>
+  );
 }
