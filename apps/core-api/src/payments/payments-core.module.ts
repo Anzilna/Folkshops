@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { InitiatePaymentHandler } from "./commands/initiate-payment.handler";
+import { ProcessPaymentWebhookHandler } from "./commands/process-payment-webhook.handler";
 import { StripeProvider } from "./providers/stripe.provider";
 import { PAYMENT_GATEWAY } from "./payment-provider.interface";
 import { PaymentAccountsService } from "./payment-accounts.service";
@@ -21,7 +23,20 @@ import { PaymentsService } from "./payments.service";
  * its own (customer) JwtModule.
  */
 @Module({
-  providers: [PaymentsService, PaymentAccountsService, { provide: PAYMENT_GATEWAY, useClass: StripeProvider }],
+  // InitiatePaymentHandler/ProcessPaymentWebhookHandler registered once
+  // here (not duplicated per consuming module, unlike OrdersService) —
+  // this module already imports neither AuthModule nor StorefrontModule,
+  // so there's no bug-#7-class collision risk to avoid by splitting them.
+  // CommandBus itself comes from CqrsModule (registered globally in
+  // AppModule) — no need to import CqrsModule here too. See
+  // docs/decisions/0010-partial-cqrs-migration.md.
+  providers: [
+    PaymentsService,
+    PaymentAccountsService,
+    { provide: PAYMENT_GATEWAY, useClass: StripeProvider },
+    InitiatePaymentHandler,
+    ProcessPaymentWebhookHandler,
+  ],
   // PAYMENT_GATEWAY exported alongside the services, not just them —
   // StripeSignatureGuard (in PaymentsWebhookModule) injects
   // PAYMENT_GATEWAY directly, not through a service, so it needs the

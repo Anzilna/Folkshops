@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { CqrsModule } from "@nestjs/cqrs";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { CartModule } from "./cart/cart.module";
@@ -28,6 +29,14 @@ import { UsersModule } from "./users/users.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Registered once, globally — CqrsModule is @Global(), so CommandBus/
+    // QueryBus are injectable everywhere without re-importing. Individual
+    // @CommandHandler/@QueryHandler classes still need to be added to
+    // their own feature module's `providers` array to be discovered at
+    // boot — this import alone doesn't register any handler. Only
+    // products/payments/orders have handlers today (a deliberate, partial
+    // migration — see docs/decisions/0010-partial-cqrs-migration.md).
+    CqrsModule.forRoot(),
     RedisModule,
     DatabaseModule,
     // Registered once, globally — cross-cutting infra, not owned by

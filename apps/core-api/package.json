@@ -22,6 +22,7 @@
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
+    "@nestjs/cqrs": "^11.0.3",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/throttler": "^6.2.1",
@@ -33,9 +34,9 @@
     "ioredis": "^5.4.1",
     "multer": "^2.3.0",
     "pg": "^8.13.0",
-    "stripe": "^22.6.2",
     "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.0"
+    "rxjs": "^7.8.0",
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

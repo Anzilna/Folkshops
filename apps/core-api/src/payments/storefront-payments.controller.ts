@@ -1,10 +1,11 @@
 import { Body, Controller, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
+import { CommandBus } from "@nestjs/cqrs";
 import { CurrentCustomer } from "../storefront/decorators/current-customer.decorator";
 import type { CustomerJwtPayload } from "../storefront/customer-auth.service";
 import { CustomerJwtAuthGuard } from "../storefront/guards/customer-jwt-auth.guard";
 import { CustomerTenantMatchGuard } from "../storefront/guards/customer-tenant-match.guard";
+import { InitiatePaymentCommand } from "./commands/initiate-payment.command";
 import { PayOrderDto } from "./dto/pay-order.dto";
-import { PaymentsService } from "./payments.service";
 
 // Same guard shape as StorefrontOrdersController — a customer paying for
 // their own order, not a staff action. No separate "verify-payment"
@@ -14,11 +15,13 @@ import { PaymentsService } from "./payments.service";
 @Controller("storefront/orders")
 @UseGuards(CustomerJwtAuthGuard, CustomerTenantMatchGuard)
 export class StorefrontPaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(private readonly commandBus: CommandBus) {}
 
   @Post(":orderId/pay")
   async pay(@Param("orderId") orderId: string, @Body() dto: PayOrderDto, @CurrentCustomer() customer: CustomerJwtPayload) {
-    const info = await this.payments.initiatePayment(customer.tenantId, orderId, customer.sub, dto.idempotencyKey, dto.returnUrl);
+    const info = await this.commandBus.execute(
+      new InitiatePaymentCommand(customer.tenantId, orderId, customer.sub, dto.idempotencyKey, dto.returnUrl),
+    );
     if (!info) throw new NotFoundException("Order not found");
     return info;
   }

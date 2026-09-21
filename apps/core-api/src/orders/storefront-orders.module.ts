@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { StorefrontModule } from "../storefront/storefront.module";
+import { CheckoutHandler } from "./commands/checkout.handler";
 import { OrdersService } from "./orders.service";
+import { GetCustomerOrderHandler } from "./queries/get-customer-order.handler";
+import { ListCustomerOrdersHandler } from "./queries/list-customer-orders.handler";
 import { StorefrontOrdersController } from "./storefront-orders.controller";
 
 // Customer-facing half of orders — split from OrdersModule specifically to
@@ -13,6 +16,10 @@ import { StorefrontOrdersController } from "./storefront-orders.controller";
 @Module({
   imports: [StorefrontModule],
   controllers: [StorefrontOrdersController],
-  providers: [OrdersService],
+  // CheckoutHandler/GetCustomerOrderHandler/ListCustomerOrdersHandler
+  // registered ONLY here (customer) — see orders.module.ts's comment on
+  // why the staff-side equivalents use distinct Query classes rather than
+  // being shared.
+  providers: [OrdersService, CheckoutHandler, GetCustomerOrderHandler, ListCustomerOrdersHandler],
 })
 export class StorefrontOrdersModule {}

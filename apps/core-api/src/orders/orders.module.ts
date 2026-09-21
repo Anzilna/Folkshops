@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { OrdersController } from "./orders.controller";
 import { OrdersService } from "./orders.service";
+import { GetOrderHandler } from "./queries/get-order.handler";
+import { ListOrdersHandler } from "./queries/list-orders.handler";
 
 // Staff-facing only — deliberately does NOT also import StorefrontModule.
 // A module importing both AuthModule and StorefrontModule would pull in
@@ -15,6 +17,12 @@ import { OrdersService } from "./orders.service";
 @Module({
   imports: [AuthModule],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  // GetOrderHandler/ListOrdersHandler registered ONLY here (staff) — the
+  // customer-side equivalents (GetCustomerOrderHandler/
+  // ListCustomerOrdersHandler) live in StorefrontOrdersModule, using
+  // distinct Query classes so the two never collide in CommandBus/
+  // QueryBus's shared, class-keyed handler map. See
+  // docs/decisions/0010-partial-cqrs-migration.md.
+  providers: [OrdersService, GetOrderHandler, ListOrdersHandler],
 })
 export class OrdersModule {}
