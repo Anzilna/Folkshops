@@ -10,9 +10,11 @@
     "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
+    "@folkshops/events": "workspace:*",
     "bullmq": "^6.3.7",
     "dotenv": "^16.6.1",
     "ioredis": "^5.4.1",
+    "kafkajs": "^2.2.4",
     "pg": "^8.13.0"
   },
   "devDependencies": {

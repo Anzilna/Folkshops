@@ -21,3 +21,7 @@ First slice of Phase 1: a monorepo skeleton matching the target `apps/` / `packa
 - Auth, tenancy, RBAC, RLS — next slice; `database/rls-tests/` stays empty until then, and no tenant-facing feature is allowed before its concurrent isolation test exists (see repo root README build order).
 - Any frontend app beyond its placeholder — Next.js scaffolding is a separate slice per app.
 - CI beyond lint/build — no deploy pipeline until there is something worth deploying.
+
+## Addendum — Kafka/Debezium/Elasticsearch pulled forward (2026-09-19)
+
+The "Elasticsearch, Kafka, and Debezium are explicitly later-phase... not started until the features that need them exist" line above was an accurate description of Phase 1's actual needs, but it is **superseded, as a deliberate exception**, by an explicit user request to build the full analytics/search pipeline now rather than at Phase 5. The user was shown this conflict directly before any code was written and chose to proceed. See `docs/decisions/0009-analytics-outbox-cdc-kafka.md` for the full design and reasoning — this line's original judgment (don't run infrastructure idle before something needs it) is unchanged as a general principle, it was just overridden for this one slice, on request, not silently.

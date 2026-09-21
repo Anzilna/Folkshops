@@ -176,6 +176,20 @@
       "when": 1789720000000,
       "tag": "0024_enable-rls-notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789825324884,
+      "tag": "0025_outbox-kafka-columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789825504540,
+      "tag": "0026_debezium-replication-role",
+      "breakpoints": true
     }
   ]
 }

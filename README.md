@@ -74,6 +74,87 @@ The four Next.js frontends are **not** containerized — run them natively
 `storefront`:3000, `merchant-admin`:3001, `platform-admin`:3002,
 `marketing`:3003.
 
+## Analytics stack (Kafka + Debezium + Elasticsearch)
+
+A deliberate, user-approved pull-forward of later-phase infrastructure —
+see `docs/decisions/0009-analytics-outbox-cdc-kafka.md` for why both the
+transactional outbox and Debezium CDC exist and land in Kafka, consumed by
+a separate `apps/analytics` service. Not part of the default `docker
+compose up -d` mental model above conceptually (it's the same command),
+but new enough to call out its own startup order and health checks.
+
+```bash
+# 1. Bring up every service, including the new ones — depends_on/health
+#    checks already express the correct order (postgres -> kafka ->
+#    kafka-init -> kafka-connect -> debezium-connector-init;
+#    elasticsearch independent):
+docker compose up -d
+
+# 2. Apply migrations (creates the folkshops_debezium role, grants, and
+#    the CDC publication — 0025/0026 in database/migrations/):
+pnpm --filter @folkshops/core-api db:migrate
+
+# 3. Health checks
+curl http://localhost:8083/connectors/folkshops-postgres-connector/status
+# -> {"name":"folkshops-postgres-connector","connector":{"state":"RUNNING",...},"tasks":[{"state":"RUNNING",...}]}
+curl http://localhost:9200/_cluster/health
+# -> {"status":"green" or "yellow", ...} (yellow is normal for a single dev node — see index mappings' number_of_replicas: 0)
+
+# 4. Build the shared event-envelope package once (apps/workers and
+#    apps/analytics both consume its compiled output, not raw TS):
+pnpm --filter @folkshops/events build
+
+# 5. Run the analytics service natively (not a compose service, same
+#    precedent as apps/workers):
+cp apps/analytics/.env.example apps/analytics/.env
+pnpm --filter @folkshops/analytics-api dev
+curl http://localhost:4100/health
+# -> {"status":"ok"}
+
+# 6. apps/workers also needs the new KAFKA_BROKERS var — copy/update its .env
+#    (see apps/workers/.env.example) and restart it if already running.
+```
+
+**Kafka topics**: `folkshops.events.order` / `folkshops.events.payment` /
+`folkshops.events.cart` (business events, from the outbox relay) and
+`folkshops.cdc.products` / `folkshops.cdc.categories` (raw Debezium
+change events) — created up front by the `kafka-init` one-shot service.
+
+**Verify a business event end to end**: complete a real Stripe test-mode
+checkout (`docs/payments.md`), then:
+```bash
+curl -s http://localhost:9200/order_analytics/_search?pretty
+```
+should show a document for that order; the merchant-admin `/analytics`
+page (subscribed via SSE) should update live without a reload.
+
+**Verify a CDC event end to end**: edit a product's name via
+merchant-admin, then:
+```bash
+curl -s http://localhost:9200/products/_doc/product:<tenantId>:<productId>
+```
+should reflect the new name within a few seconds.
+
+**Elasticsearch indexes**: `products` / `categories` / `order_analytics`
+are aliases — the real, versioned indexes behind them (`products_v1`,
+etc.) are never referenced directly by the application; see
+`apps/analytics/src/search/alias-manager.service.ts`.
+
+**Re-registering the Debezium connector by hand** (if it's ever deleted
+or `docker compose down -v` wiped it):
+```bash
+curl -X PUT http://localhost:8083/connectors/folkshops-postgres-connector/config \
+  -H 'Content-Type: application/json' \
+  -d @database/debezium/postgres-connector.json
+```
+
+**If the connector is down for a long time**: the replication slot
+(`folkshops_cdc_slot`) retains WAL up to `max_slot_wal_keep_size=2GB`
+(set on the `postgres` service) — past that, the slot becomes invalid and
+needs a full re-snapshot (`snapshot.mode: initial` re-registration). Not
+a concern for normal dev use, just don't leave `docker compose stop`
+running for days with a stuck connector.
+
 ## Repository layout
 
 ```

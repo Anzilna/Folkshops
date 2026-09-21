@@ -26,3 +26,18 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO folkshops_app;
 -- manual GRANT before the app can use it.
 ALTER DEFAULT PRIVILEGES FOR ROLE folkshops IN SCHEMA public
   GRANT ALL PRIVILEGES ON TABLES TO folkshops_app;
+
+-- Debezium's replication role (docs/decisions/0009) — same fresh-volume-only
+-- convenience as folkshops_app above, dev-only fixed password. The real
+-- role/grant/publication also exist as a real migration
+-- (0026_debezium-replication-role.sql) for any non-fresh-volume target;
+-- this block just makes a brand-new `docker compose up` not need that
+-- migration to have already run before the connector can authenticate —
+-- it's created here AND (idempotently, IF NOT EXISTS) by the migration.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'folkshops_debezium') THEN
+    CREATE ROLE folkshops_debezium WITH LOGIN REPLICATION NOSUPERUSER NOBYPASSRLS PASSWORD 'folkshops_debezium';
+  END IF;
+END
+$$;

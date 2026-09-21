@@ -1,0 +1,48 @@
+{
+  "name": "@folkshops/analytics-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Analytics/search service (docs/decisions/0009) — Kafka consumers (CDC + business events, never mixed), Elasticsearch indexing, a tenant-scoped Analytics Query API, and a realtime SSE bridge. A separate deployable from core-api; never touches Postgres directly (Debezium's own initial snapshot bootstraps Elasticsearch, see search/alias-manager.service.ts). Named @folkshops/analytics-api, not @folkshops/analytics, to avoid colliding with the pre-existing packages/analytics — a distinct, still-unscaffolded Phase 4 shared package for product/marketing event-tracking client code, unrelated to this service's merchant business-analytics pipeline.",
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "^8.15.0",
+    "@folkshops/events": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/cqrs": "^11.0.3",
+    "@nestjs/platform-express": "^11.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "cookie-parser": "^1.4.7",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "kafkajs": "^2.2.4",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/express": "^5.0.0",
+    "@types/express-serve-static-core": "^5.0.0",
+    "@types/jest": "^29.5.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^9.0.0",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

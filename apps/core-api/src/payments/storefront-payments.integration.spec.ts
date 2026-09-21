@@ -241,8 +241,19 @@ test("webhook: checkout.session.completed captures the order, a duplicate delive
       .then((rows) => rows.filter((row) => (row.payload as { orderId?: string }).orderId === orderId));
 
   const [outboxRow] = await outboxRowsForOrder();
-  expect(outboxRow).toMatchObject({ eventType: "order.paid", payload: { orderId } });
+  // aggregateType/aggregateId + the enriched payload (subtotalCents/
+  // currency/items, not just {orderId, paymentId}) are what apps/analytics'
+  // Kafka consumer needs to build order_analytics without re-querying
+  // Postgres — see docs/decisions/0009-analytics-outbox-cdc-kafka.md.
+  expect(outboxRow).toMatchObject({
+    eventType: "order.paid",
+    aggregateType: "order",
+    aggregateId: orderId,
+    payload: { orderId, currency: "aed" },
+  });
+  expect((outboxRow.payload as { items: unknown[] }).items.length).toBeGreaterThan(0);
   expect(outboxRow.processedAt).toBeNull();
+  expect(outboxRow.kafkaPublishedAt).toBeNull();
 
   // Redelivery of the exact same event — must not error, must not change
   // anything further (there's nothing left to change, but this proves the
@@ -286,16 +297,23 @@ test("webhook: checkout.session.expired marks the order payment_failed", async (
     .expect(200);
   expect(orderAfter.body.status).toBe("payment_failed");
 
-  // No notification for a failed payment — only orderStatus === "paid"
-  // writes to the outbox (see PaymentsService.applyPaymentResult()).
-  // Filtered by this test's own orderId, not a blanket tenant-wide count —
-  // every test in this file shares one tenant, so other tests' outbox rows
-  // are still present.
+  // A payment_failed transition writes its own outbox event (see
+  // docs/decisions/0009) — apps/workers has no handler for it beyond
+  // relaying it to Kafka, so no `notifications` row results, unlike
+  // order.paid. Filtered by this test's own orderId, not a blanket
+  // tenant-wide count — every test in this file shares one tenant, so
+  // other tests' outbox rows are still present.
   const dbRouter = app.get(DbRouter);
   const outboxRowsForOrder = await dbRouter
     .read("strong", (db) => db.select().from(outboxEvents).where(eq(outboxEvents.tenantId, tenant.id)))
     .then((rows) => rows.filter((row) => (row.payload as { orderId?: string }).orderId === orderId));
-  expect(outboxRowsForOrder).toHaveLength(0);
+  expect(outboxRowsForOrder).toHaveLength(1);
+  expect(outboxRowsForOrder[0]).toMatchObject({
+    eventType: "payment.failed",
+    aggregateType: "order",
+    aggregateId: orderId,
+    payload: { orderId },
+  });
 });
 
 test("webhook: an invalid signature is rejected before anything is processed", async () => {

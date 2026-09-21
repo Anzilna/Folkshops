@@ -1,0 +1,9 @@
+dist/
+*.tsbuildinfo
+node_modules/
+.env
+# tsc was run directly at some point without going through nest build's
+# outDir, leaving compiled .js/.js.map siblings next to their .ts source —
+# never commit those; only .ts source and config are tracked.
+src/**/*.js
+src/**/*.js.map

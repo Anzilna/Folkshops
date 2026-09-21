@@ -33,6 +33,17 @@ import { tenants } from "./tenants";
  * crashed, try again." `processedAt` is set only once the worker's own
  * side effect actually succeeds — this row, not the BullMQ job, is the
  * source of truth for "did this actually happen."
+ *
+ * `aggregateType`/`aggregateId` (added for docs/decisions/0009's Kafka
+ * envelope, `BusinessEventEnvelope` in packages/events) exist so the relay
+ * can build a stable envelope without parsing `payload` to reconstruct
+ * which entity an event is about.
+ *
+ * `kafkaPublishedAt` tracks a SECOND, independent sink — the relay now
+ * does two things per row (BullMQ enqueue, tracked by dispatchedAt/
+ * processedAt as before; Kafka publish, tracked here) and each can fail
+ * without blocking the other. A row is only safe to stop re-polling once
+ * BOTH are done; see relay.ts's poll query and ADR 0009's Failure modes.
  */
 export const outboxEvents = pgTable("outbox_events", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -40,9 +51,12 @@ export const outboxEvents = pgTable("outbox_events", {
     .notNull()
     .references(() => tenants.id),
   eventType: text("event_type").notNull(),
+  aggregateType: text("aggregate_type").notNull(),
+  aggregateId: uuid("aggregate_id").notNull(),
   payload: jsonb("payload").notNull(),
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   processedAt: timestamp("processed_at", { withTimezone: true }),
+  kafkaPublishedAt: timestamp("kafka_published_at", { withTimezone: true }),
   attempts: integer("attempts").notNull().default(0),
   lastError: text("last_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

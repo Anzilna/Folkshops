@@ -3,6 +3,15 @@ services:
     image: postgres:16-alpine
     container_name: folkshops-postgres
     restart: unless-stopped
+    # wal_level=logical + the replication-slot/sender limits are what make
+    # Debezium's CDC pipeline possible at all (docs/decisions/0009) — a
+    # postmaster-level setting, not something a migration can SET; takes
+    # effect on the next Postgres restart (docker recreates the container),
+    # no data-directory reinit needed. max_slot_wal_keep_size bounds WAL
+    # retention if the Debezium connector is ever down for a long time (see
+    # the ADR's Failure modes) — past that limit the slot becomes invalid
+    # and needs a full re-snapshot, a documented dev-acceptable tradeoff.
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10", "-c", "max_slot_wal_keep_size=2GB"]
     environment:
       POSTGRES_USER: folkshops
       POSTGRES_PASSWORD: folkshops
@@ -74,6 +83,135 @@ services:
       mc anonymous set download local/folkshops-uploads
       "
     restart: "no"
+
+  # Analytics/search pipeline (docs/decisions/0009) — a deliberate,
+  # user-approved pull-forward of Phase 5 infrastructure. Startup order is
+  # entirely expressed via depends_on/condition below, same chain shape as
+  # minio -> minio-init -> core-api above: kafka -> kafka-init -> kafka-connect
+  # -> debezium-connector-init, elasticsearch independent. apps/analytics
+  # itself is NOT a compose service, same precedent as apps/workers — both
+  # run natively (`pnpm --filter @folkshops/analytics dev`).
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: folkshops-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # Three listeners: PLAINTEXT for the host (native `pnpm dev`
+      # processes — apps/workers, apps/analytics), CONTROLLER for KRaft's
+      # own quorum traffic, DOCKER for other containers (kafka-connect) —
+      # same "container-network hostname vs localhost" split as core-api's
+      # own DATABASE_PRIMARY_URL override elsewhere in this file.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,DOCKER://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,DOCKER://kafka:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: folkshops-dev-cluster
+    volumes:
+      - folkshops-kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  # One-shot: pre-creates the 5 topics (business events + CDC) so
+  # allowAutoTopicCreation:false in every kafkajs producer/consumer is
+  # safe — a mistyped topic name fails loudly instead of silently
+  # auto-creating a stray topic. --if-not-exists = idempotent, same
+  # pattern as minio-init above.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: folkshops-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      for t in folkshops.events.order folkshops.events.payment folkshops.events.cart folkshops.cdc.products folkshops.cdc.categories; do
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9094 --create --if-not-exists --topic $$t --partitions 3 --replication-factor 1;
+      done
+      "
+    restart: "no"
+
+  kafka-connect:
+    image: debezium/connect:3.0.0.Final
+    container_name: folkshops-kafka-connect
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9094
+      GROUP_ID: folkshops-connect-cluster
+      CONFIG_STORAGE_TOPIC: folkshops_connect_configs
+      OFFSET_STORAGE_TOPIC: folkshops_connect_offsets
+      STATUS_STORAGE_TOPIC: folkshops_connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  # One-shot: registers the Postgres connector via Kafka Connect's REST API
+  # once it's healthy. PUT (Connect's documented upsert), not POST — safe
+  # to re-run on every `docker compose up`, never creates a duplicate
+  # connector. DEBEZIUM_DB_PASSWORD must match whatever
+  # folkshops_debezium's actual password is (dev-only fixed value from
+  # database/init/01-app-role.sql unless overridden).
+  debezium-connector-init:
+    image: curlimages/curl:8.11.0
+    container_name: folkshops-debezium-connector-init
+    depends_on:
+      kafka-connect:
+        condition: service_healthy
+    volumes:
+      - ./database/debezium/postgres-connector.json:/config/postgres-connector.json:ro
+    environment:
+      DEBEZIUM_DB_PASSWORD: ${DEBEZIUM_DB_PASSWORD:-folkshops_debezium}
+    entrypoint: >
+      /bin/sh -c "
+      sed \"s/\\$${DEBEZIUM_DB_PASSWORD}/$$DEBEZIUM_DB_PASSWORD/\" /config/postgres-connector.json > /tmp/connector.json &&
+      curl -sf -X PUT http://kafka-connect:8083/connectors/folkshops-postgres-connector/config -H 'Content-Type: application/json' -d @/tmp/connector.json
+      "
+    restart: "no"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: folkshops-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      # Dev only — see apps/analytics/README.md for the prod posture (TLS +
+      # auth, never exposed publicly). Elasticsearch/Kafka are both
+      # internal-only in this compose file (no browser ever talks to
+      # either directly — apps/analytics is the sole client of both).
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - folkshops-es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
 
   # Optional — `pnpm --filter @folkshops/core-api dev` on the host works
   # exactly as before and is unaffected by this. This exists purely so
@@ -156,5 +294,7 @@ volumes:
   folkshops-postgres-data:
   folkshops-redis-data:
   folkshops-minio-data:
+  folkshops-kafka-data:
+  folkshops-es-data:
   core-api-root-node-modules:
   core-api-app-node-modules:

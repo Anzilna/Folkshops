@@ -15,4 +15,5 @@ export const env = {
   databasePrimaryUrl: required("DATABASE_PRIMARY_URL"),
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   outboxPollIntervalMs: Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 3000),
+  kafkaBrokers: (process.env.KAFKA_BROKERS ?? "localhost:9092").split(","),
 };

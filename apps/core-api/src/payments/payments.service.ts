@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common"
 import { and, eq } from "drizzle-orm";
 import type Stripe from "stripe";
 import { DbRouter } from "../database/db-router";
-import { orders, outboxEvents, paymentEvents, paymentOrderLookup, payments } from "../database/schema";
+import { orderItems, orders, outboxEvents, paymentEvents, paymentOrderLookup, payments } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 import type { Db } from "../database/tokens";
 import { PaymentAccountsService } from "./payment-accounts.service";
@@ -269,10 +269,48 @@ export class PaymentsService {
     // outbox-events.ts's own comment). apps/workers picks this up async;
     // core-api never touches Redis/BullMQ directly here, keeping the
     // webhook handler's own commit fast regardless of queue health.
+    //
+    // The payload is enriched with subtotalCents/currency/items (not just
+    // {orderId, paymentId} as before docs/decisions/0009) because the
+    // Kafka-consuming analytics service (apps/analytics) must build its
+    // order_analytics read model from this envelope's own payload, never
+    // by re-querying Postgres or inferring revenue from a CDC row — see
+    // that ADR's "why both outbox and CDC" section.
     if (orderStatus === "paid") {
+      const [orderRow] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+
       await tx.insert(outboxEvents).values({
         tenantId,
         eventType: "order.paid",
+        aggregateType: "order",
+        aggregateId: orderId,
+        payload: {
+          orderId,
+          paymentId: payment.id,
+          customerId: orderRow?.customerId ?? null,
+          subtotalCents: orderRow?.subtotalCents ?? null,
+          currency: payment.currency,
+          items: items.map((item) => ({
+            productId: item.productId,
+            productName: item.productName,
+            priceCents: item.priceCents,
+            quantity: item.quantity,
+          })),
+        },
+      });
+    }
+
+    // payment.failed — the one new outbox event type added alongside the
+    // Kafka pipeline (docs/decisions/0009). derivePaymentTransition() above
+    // already computes this transition in the same transaction; this is a
+    // trivial extension of an existing case, not a new endpoint/caller.
+    if (orderStatus === "payment_failed") {
+      await tx.insert(outboxEvents).values({
+        tenantId,
+        eventType: "payment.failed",
+        aggregateType: "order",
+        aggregateId: orderId,
         payload: { orderId, paymentId: payment.id },
       });
     }

@@ -1,0 +1,31 @@
+{
+  "name": "folkshops-postgres-connector",
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "database.hostname": "postgres",
+  "database.port": "5432",
+  "database.user": "folkshops_debezium",
+  "database.password": "${DEBEZIUM_DB_PASSWORD}",
+  "database.dbname": "folkshops_dev",
+
+  "topic.prefix": "folkshops.cdc.raw",
+  "table.include.list": "public.products,public.categories",
+
+  "plugin.name": "pgoutput",
+  "publication.name": "folkshops_cdc_publication",
+  "publication.autocreate.mode": "disabled",
+  "slot.name": "folkshops_cdc_slot",
+
+  "tombstones.on.delete": "false",
+  "snapshot.mode": "initial",
+  "heartbeat.interval.ms": "10000",
+
+  "transforms": "route",
+  "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+  "transforms.route.regex": "folkshops\\.cdc\\.raw\\.public\\.(.*)",
+  "transforms.route.replacement": "folkshops.cdc.$1",
+
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "false",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false"
+}
