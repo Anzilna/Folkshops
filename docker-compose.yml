@@ -95,8 +95,9 @@ services:
   # entirely expressed via depends_on/condition below, same chain shape as
   # minio -> minio-init -> core-api above: kafka -> kafka-init -> kafka-connect
   # -> debezium-connector-init, elasticsearch independent. apps/analytics
-  # itself is NOT a compose service, same precedent as apps/workers — both
-  # run natively (`pnpm --filter @folkshops/analytics dev`).
+  # can run either natively (`pnpm --filter @folkshops/analytics-api dev`)
+  # or as the optional `analytics` service further down; apps/workers is
+  # still native-only.
   kafka:
     image: apache/kafka:3.8.0
     container_name: folkshops-kafka
@@ -270,6 +271,10 @@ services:
       REDIS_URL: redis://redis:6379
       CACHE_STORE_TTL_SECONDS: 300
       CACHE_PRODUCTS_LIST_TTL_SECONDS: 30
+      # Product search (ProductSearchService) reads the same index
+      # apps/analytics maintains. Optional — unreachable just means search
+      # falls back to the old name ILIKE.
+      ELASTICSEARCH_URL: http://elasticsearch:9200
       JWT_SECRET: dev-only-change-me
       PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
       CUSTOMER_JWT_SECRET: dev-only-change-me-three
@@ -295,6 +300,54 @@ services:
       - .:/app
       - core-api-root-node-modules:/app/node_modules
       - core-api-app-node-modules:/app/apps/core-api/node_modules
+
+  # Optional, same posture as core-api above — `pnpm --filter
+  # @folkshops/analytics-api dev` on the host works identically (don't run
+  # both, port 4100 conflict). Every env var is set explicitly below rather
+  # than via env_file, so apps/analytics/.env isn't required to exist for
+  # the container; the values differ from .env only in using container-
+  # network hostnames (kafka:9094 — the DOCKER listener — elasticsearch,
+  # redis) instead of localhost.
+  analytics:
+    build:
+      context: .
+      dockerfile: apps/analytics/Dockerfile
+    container_name: folkshops-analytics
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4100
+      # Same reason as core-api's CI flag above (bug #16).
+      CI: "true"
+      KAFKA_BROKERS: kafka:9094
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      REDIS_URL: redis://redis:6379
+      # MUST match core-api's JWT_SECRET above — verifies the same staff
+      # access tokens core-api issues.
+      JWT_SECRET: dev-only-change-me
+      CORS_ORIGINS: http://localhost:3001
+    ports:
+      - "4100:4100"
+    volumes:
+      # Deliberately NOT core-api's whole-repo `.:/app` mount: pnpm's
+      # startup install is workspace-wide, and with the whole repo mounted
+      # it writes Linux node_modules into every *other* package on the host
+      # (CLAUDE.md bug #16's side effect — reproduced live when this service
+      # was added). Mounting only the two directories hot reload actually
+      # needs keeps everything else inside the image, so that install can
+      # never reach the host. Each mount's node_modules is a named volume
+      # for the same reason core-api's are.
+      - ./apps/analytics:/app/apps/analytics
+      - ./packages/events:/app/packages/events
+      - analytics-app-node-modules:/app/apps/analytics/node_modules
+      - analytics-events-node-modules:/app/packages/events/node_modules
 
   # Optional, same posture as core-api above — native `uvicorn`/`arq` on the
   # host (see apps/ai-service/README.md) works identically and is the
@@ -336,3 +389,5 @@ volumes:
   folkshops-es-data:
   core-api-root-node-modules:
   core-api-app-node-modules:
+  analytics-app-node-modules:
+  analytics-events-node-modules:

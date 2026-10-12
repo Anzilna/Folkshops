@@ -1,10 +1,16 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { eq, sql } from "drizzle-orm";
+import type Redis from "ioredis";
 import { DbRouter } from "../database/db-router";
 import { withTenantContext } from "../database/tenant-context";
-import { membershipLookup, memberships, tenants, users } from "../database/schema";
+import { membershipLookup, memberships, outboxEvents, subscriptionCustomerLookup, subscriptions, tenants, users } from "../database/schema";
+import { publishDashboardUpdate } from "../platform-admin/dashboard/platform-admin-realtime";
+import { REDIS_CLIENT } from "../redis/tokens";
+import { BILLING_GATEWAY, BillingProvider } from "../subscriptions/billing-provider.interface";
+import { PlansService } from "../subscriptions/plans.service";
 import { TenantsService } from "../tenants/tenants.service";
 import { UsersService } from "../users/users.service";
 import { TokenService } from "./token.service";
@@ -29,17 +35,34 @@ export class AuthService {
     private readonly dbRouter: DbRouter,
     private readonly tenantsService: TenantsService,
     private readonly usersService: UsersService,
+    private readonly plansService: PlansService,
+    @Inject(BILLING_GATEWAY) private readonly billing: BillingProvider,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly config: ConfigService,
     private readonly jwt: JwtService,
     private readonly tokens: TokenService,
   ) {}
 
-  /** Self-service merchant onboarding: creates a new store, its first (owner) user, and their membership. */
+  private merchantAdminUrl(): string {
+    return this.config.get<string>("MERCHANT_ADMIN_URL") ?? "http://localhost:3001";
+  }
+
+  /**
+   * Self-service merchant onboarding: creates a new store, its first
+   * (owner) user, their membership, AND a `subscriptions` row on the
+   * chosen (or default "free") plan — see docs/decisions/0012. The
+   * subscription row is inserted in the SAME transaction (pure DB write,
+   * no external call); a paid plan's Stripe Customer + Checkout Session
+   * are created AFTER the transaction commits, since a network call has
+   * no business holding a DB transaction open.
+   */
   async register(input: {
     storeName: string;
     storeSlug: string;
     email: string;
     password: string;
     name: string;
+    planSlug?: string;
   }) {
     if (await this.tenantsService.findBySlug(input.storeSlug)) {
       throw new ConflictException("Store slug already taken");
@@ -48,12 +71,27 @@ export class AuthService {
       throw new ConflictException("Email already registered");
     }
 
+    // No default plan — a real registration (the marketing pricing page ->
+    // register flow) must always name one explicitly. There is no
+    // publicly reachable "free forever, no payment" path: `free` still
+    // exists as a row (isActive: false, see docs/decisions/0012) purely so
+    // test fixtures/db:seed-demo-style tooling can ask for it by name
+    // without touching real Stripe — nothing in the actual product ever
+    // sends that slug. Caught live: the marketing homepage's "Start
+    // selling" button linked straight to /register with no plan chosen,
+    // silently defaulting every signup to the hidden free plan forever.
+    if (!input.planSlug) {
+      throw new BadRequestException("A plan must be selected to create a store");
+    }
+    const plan = await this.plansService.findBySlug(input.planSlug);
+    if (!plan) throw new BadRequestException(`Unknown plan: ${input.planSlug}`);
+
     const passwordHash = await bcrypt.hash(input.password, PASSWORD_HASH_ROUNDS);
 
     // A write, unconditionally on primary. The tenant doesn't exist until
     // this transaction runs, so tenant context can't be set up front —
-    // set it right after the tenant is created, before the one
-    // RLS-protected insert (memberships) happens.
+    // set it right after the tenant is created, before the RLS-protected
+    // inserts (memberships, subscriptions) happen.
     const { tenant, user, membership } = await this.dbRouter.write((db) =>
       db.transaction(async (tx) => {
         const [tenant] = await tx
@@ -75,9 +113,60 @@ export class AuthService {
         // identify() possible. Keep it in the same transaction as the
         // memberships insert so the two can never drift.
         await tx.insert(membershipLookup).values({ userId: user.id, tenantId: tenant.id });
+        // Free plan starts "active" immediately (no Stripe involved at
+        // all); a paid plan starts "incomplete" until the Checkout
+        // Session's webhook confirms payment (see below).
+        await tx.insert(subscriptions).values({
+          tenantId: tenant.id,
+          planId: plan.id,
+          status: plan.priceCents === 0 ? "active" : "incomplete",
+        });
+        // Welcome email, via apps/workers (handlers/merchant-registered.ts)
+        // — same transaction, so it's sent iff the store actually exists,
+        // and registration never waits on or fails because of an email
+        // vendor. outbox_events has no RLS; tenant context is irrelevant.
+        await tx.insert(outboxEvents).values({
+          tenantId: tenant.id,
+          eventType: "merchant.registered",
+          aggregateType: "tenant",
+          aggregateId: tenant.id,
+          payload: { userId: user.id },
+        });
         return { tenant, user, membership };
       }),
     );
+
+    let checkoutUrl: string | undefined;
+    if (plan.priceCents > 0) {
+      if (!plan.stripePriceId) {
+        throw new BadRequestException(`Plan ${plan.slug} isn't available for purchase yet`);
+      }
+      const customer = await this.billing.createCustomer(user.email, tenant.id);
+      await this.dbRouter.write((db) =>
+        withTenantContext(db, tenant.id, (tx) =>
+          tx
+            .update(subscriptions)
+            .set({ stripeCustomerId: customer.customerId })
+            .where(eq(subscriptions.tenantId, tenant.id)),
+        ),
+      );
+      await this.dbRouter.write((db) =>
+        db.insert(subscriptionCustomerLookup).values({ stripeCustomerId: customer.customerId, tenantId: tenant.id }),
+      );
+      const session = await this.billing.createCheckoutSession({
+        stripeCustomerId: customer.customerId,
+        stripePriceId: plan.stripePriceId,
+        planId: plan.id,
+        successUrl: `${this.merchantAdminUrl()}/settings/billing?checkout=success`,
+        cancelUrl: `${this.merchantAdminUrl()}/settings/billing?checkout=cancelled`,
+      });
+      checkoutUrl = session.url;
+    }
+
+    // Best-effort, fire-and-forget — a missed signal just means the
+    // platform-admin dashboard's live view misses one tick until the next
+    // page load, never a reason to fail a real registration over.
+    void publishDashboardUpdate(this.redis);
 
     return {
       tokens: await this.issueTokens(tenant.id, {
@@ -88,6 +177,7 @@ export class AuthService {
       }),
       tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
       user: { id: user.id, email: user.email, name: user.name },
+      checkoutUrl,
     };
   }
 

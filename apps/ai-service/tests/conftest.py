@@ -13,6 +13,7 @@ import pytest_asyncio
 
 from app.infrastructure.cache.redis import CacheService
 from app.infrastructure.embeddings.fake import FakeEmbeddingProvider
+from app.infrastructure.persistence.models import DocumentRow
 from app.infrastructure.persistence.postgres import Db, run_migrations
 from app.infrastructure.vector_store.pgvector import PgVectorStore
 from app.observability.metrics import Metrics
@@ -78,11 +79,10 @@ def make_document(db):
     """
 
     async def _make(tenant_id: uuid.UUID) -> uuid.UUID:
-        async with db.tenant_context(str(tenant_id)) as conn:
-            row = await conn.fetchrow(
-                "INSERT INTO documents (tenant_id, filename, mime_type) VALUES ($1, 'test.txt', 'text/plain') RETURNING id",
-                tenant_id,
-            )
-        return row["id"]
+        row = DocumentRow(tenant_id=tenant_id, filename="test.txt", mime_type="text/plain")
+        async with db.tenant_context(str(tenant_id)) as session:
+            session.add(row)
+            await session.flush()  # id comes from the column's gen_random_uuid() default
+        return row.id
 
     return _make

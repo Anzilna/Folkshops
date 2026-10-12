@@ -23,6 +23,13 @@ export const customers = pgTable(
     // transact); it has no effect on OTP login today since nothing checks
     // it yet — see CLAUDE.md's Deliberately Deferred list.
     isActive: boolean("is_active").notNull().default(true),
+    // WhatsApp order updates (apps/workers, docs/decisions/0013). Meta's
+    // policy requires explicit opt-in before a business messages someone,
+    // so this defaults to false and only the customer can turn it on
+    // (storefront checkout/account) — staff can't opt a customer in.
+    // whatsappOptInAt is the consent record: when they agreed.
+    whatsappOptIn: boolean("whatsapp_opt_in").notNull().default(false),
+    whatsappOptInAt: timestamp("whatsapp_opt_in_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

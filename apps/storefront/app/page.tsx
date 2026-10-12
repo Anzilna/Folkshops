@@ -22,8 +22,14 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   // the true landing view, not on every filtered/paginated result page.
   const isHome = !q && !category && page === 1;
 
-  const query = new URLSearchParams({ status: "active", limit: String(PAGE_SIZE), page: String(page), sortBy: "createdAt", sortDir: "desc" });
+  const query = new URLSearchParams({ status: "active", limit: String(PAGE_SIZE), page: String(page) });
+  // A search is ranked best-match-first by core-api only when no explicit
+  // sort is sent (ProductsService.list) — newest-first applies to browsing.
   if (q) query.set("search", q);
+  else {
+    query.set("sortBy", "createdAt");
+    query.set("sortDir", "desc");
+  }
   if (category) query.set("categoryId", category);
 
   const [productsRes, categoriesRes, storeRes] = await Promise.all([

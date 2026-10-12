@@ -1,11 +1,24 @@
 import { Worker, type Job } from "bullmq";
 import { pool } from "./db";
+import { handlePaymentsActivated, handleSubscriptionEvent } from "./handlers/billing-events";
+import { handleMerchantRegistered } from "./handlers/merchant-registered";
 import { handleOrderPaid } from "./handlers/order-paid";
+import { handlePasswordResetRequested } from "./handlers/password-reset-requested";
+import { handlePaymentFailed } from "./handlers/payment-failed";
 import { OUTBOX_QUEUE_NAME, type OutboxJobData } from "./queue";
 import { redis } from "./redis";
 
-const HANDLERS: Record<string, (tenantId: string, payload: Record<string, unknown>) => Promise<void>> = {
+type OutboxHandler = (tenantId: string, payload: Record<string, unknown>, outboxId: string, eventType: string) => Promise<void>;
+
+const HANDLERS: Record<string, OutboxHandler> = {
   "order.paid": handleOrderPaid,
+  "payment.failed": handlePaymentFailed,
+  "merchant.registered": handleMerchantRegistered,
+  "staff.password_reset_requested": handlePasswordResetRequested,
+  "subscription.activated": handleSubscriptionEvent,
+  "subscription.past_due": handleSubscriptionEvent,
+  "subscription.canceled": handleSubscriptionEvent,
+  "payments.activated": handlePaymentsActivated,
 };
 
 async function markProcessed(outboxId: string): Promise<void> {
@@ -28,7 +41,7 @@ export function startWorker(): Worker<OutboxJobData> {
         // wouldn't help. Logged loudly rather than silently swallowed.
         throw new Error(`No handler registered for outbox event type "${job.name}"`);
       }
-      await handler(job.data.tenantId, job.data.payload);
+      await handler(job.data.tenantId, job.data.payload, job.data.outboxId, job.name);
     },
     { connection: redis, concurrency: 5 },
   );

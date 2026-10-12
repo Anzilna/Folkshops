@@ -11,11 +11,12 @@ app/
     api/            FastAPI routers + auth dependency — HTTP only, no business logic
     application/    chat/rag/documents use-cases — depends only on domain/interfaces
     domain/         Pydantic models + Protocol interfaces — no I/O, no vendor imports
-    infrastructure/ vendor adapters (OpenAI, pgvector, Redis, Kafka, ...) — the only place a vendor SDK is imported
+    infrastructure/ vendor adapters (OpenAI, pgvector, Redis, Kafka, ...) — the only place a vendor SDK is imported;
+                    persistence/models.py holds the SQLAlchemy table mappings
     workers/        arq (Redis-backed) background jobs — ingestion never runs inside the HTTP request
     observability/  structured logging, OpenTelemetry tracing, metrics
     config.py       env-driven provider selection (never hard-coded)
-migrations/         hand-written SQL, applied by infrastructure/persistence/postgres.py's run_migrations()
+migrations/         hand-written SQL (schema source of truth — keep persistence/models.py in sync), applied by infrastructure/persistence/postgres.py's run_migrations()
 tests/
     unit/           chunking, context building, reranking, provider routers, tool registry — no I/O
     integration/    real Postgres + Redis — tenant isolation, ingestion pipeline, HTTP API

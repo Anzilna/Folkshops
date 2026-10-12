@@ -18,7 +18,11 @@ import { NextRequest, NextResponse } from "next/server";
  */
 const ACCESS_TOKEN_COOKIE = "fk_access_token";
 const REFRESH_TOKEN_COOKIE = "fk_refresh_token";
-const PUBLIC_PATHS = ["/login", "/register"];
+const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+// Public pages a signed-in merchant may still need: a reset link opened in
+// a browser that happens to hold an old session must still work, not
+// bounce to the dashboard.
+const PUBLIC_EVEN_WITH_SESSION = ["/reset-password"];
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function middleware(req: NextRequest) {
@@ -55,7 +59,7 @@ export async function middleware(req: NextRequest) {
   if (!isPublic && !hasSession) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  if (isPublic && hasSession) {
+  if (isPublic && hasSession && !PUBLIC_EVEN_WITH_SESSION.some((path) => req.nextUrl.pathname.startsWith(path))) {
     return NextResponse.redirect(new URL("/", req.url));
   }
   return NextResponse.next();

@@ -1,8 +1,10 @@
 import "./env";
 import { pool } from "./db";
+import { startEmailWorker } from "./email-worker";
 import { ensureProducerConnected, kafkaProducer } from "./kafka";
 import { redis } from "./redis";
 import { startRelay } from "./relay";
+import { startWhatsAppWorker } from "./whatsapp-worker";
 import { startWorker } from "./worker";
 
 async function main() {
@@ -16,13 +18,17 @@ async function main() {
   });
 
   const worker = startWorker();
+  const emailWorker = startEmailWorker();
+  const whatsappWorker = startWhatsAppWorker();
   const relayTimer = startRelay();
-  console.log("[workers] relay + worker started");
+  console.log("[workers] relay + outbox worker + email worker + whatsapp worker started");
 
   async function shutdown() {
     console.log("[workers] shutting down...");
     clearInterval(relayTimer);
     await worker.close();
+    await emailWorker.close();
+    await whatsappWorker.close();
     await kafkaProducer.disconnect().catch(() => {});
     await pool.end();
     redis.disconnect();

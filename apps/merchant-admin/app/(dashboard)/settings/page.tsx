@@ -14,6 +14,15 @@ export default function SettingsPage() {
           Set up &rarr;
         </Link>
       </Card>
+      <Card className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold">Billing</h2>
+          <p className="text-xs text-muted-foreground">Your Folkshops plan and subscription.</p>
+        </div>
+        <Link href="/settings/billing" className="text-sm font-medium text-accent underline underline-offset-4">
+          Manage &rarr;
+        </Link>
+      </Card>
       <ComingSoon
         title="Everything else"
         description="Store profile and team invitations aren't built yet — staff invitations are explicitly deferred for now."

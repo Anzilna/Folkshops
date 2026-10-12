@@ -10,7 +10,9 @@
     "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
+    "@folkshops/emails": "workspace:*",
     "@folkshops/events": "workspace:*",
+    "@folkshops/whatsapp": "workspace:*",
     "bullmq": "^6.3.7",
     "dotenv": "^16.6.1",
     "ioredis": "^5.4.1",

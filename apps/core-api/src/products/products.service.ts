@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, asc, count, eq, ilike, isNull, SQL } from "drizzle-orm";
+import { and, asc, count, eq, ilike, inArray, isNull, SQL } from "drizzle-orm";
 import { bulkImport, BulkImportResult } from "../common/bulk-import.util";
 import { CsvColumn, toCsv } from "../common/csv.util";
 import { offsetFor, paginatedResult, PaginatedResult, resolveSort } from "../common/pagination.util";
@@ -9,6 +9,8 @@ import type { Db } from "../database/tokens";
 import { productImages, products } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 import { CacheService } from "../redis/cache.service";
+import { ProductSearchService } from "../search/product-search.service";
+import { PlanLimitsService } from "../subscriptions/plan-limits.service";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { QueryProductsDto } from "./dto/query-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
@@ -22,14 +24,19 @@ const SORT_COLUMNS = {
   updatedAt: products.updatedAt,
 } as const;
 
-function buildFilters(tenantId: string, query: QueryProductsDto): SQL | undefined {
+/**
+ * `searchIds`: Elasticsearch's candidates for `query.search` (see
+ * ProductSearchService), or null when Elasticsearch is unavailable — then
+ * the old name ILIKE is used instead, so search degrades, never breaks.
+ */
+function buildFilters(tenantId: string, query: QueryProductsDto, searchIds: string[] | null = null): SQL | undefined {
   // isNull(deletedAt) always applies — a soft-deleted row must behave as
   // gone for every normal read path, no caller opts back into seeing it.
   const clauses = [eq(products.tenantId, tenantId), isNull(products.deletedAt)];
   if (query.status) clauses.push(eq(products.status, query.status));
   if (query.categoryId) clauses.push(eq(products.categoryId, query.categoryId));
   if (query.isActive !== undefined) clauses.push(eq(products.isActive, query.isActive));
-  if (query.search) clauses.push(ilike(products.name, `%${query.search}%`));
+  if (query.search) clauses.push(searchIds ? inArray(products.id, searchIds) : ilike(products.name, `%${query.search}%`));
   return and(...clauses);
 }
 
@@ -63,12 +70,19 @@ export class ProductsService {
   constructor(
     private readonly dbRouter: DbRouter,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
+    private readonly productSearch: ProductSearchService,
     config: ConfigService,
   ) {
     this.listTtlSeconds = Number(config.get<string>("CACHE_PRODUCTS_LIST_TTL_SECONDS") ?? 30);
   }
 
   async create(tenantId: string, input: CreateProductDto) {
+    // The only plan limit actually enforced today — see
+    // docs/decisions/0012 for why staff-seat/AI-access limits aren't
+    // (no real caller for either yet). Runs before the insert, not as a
+    // DB constraint — a placeholder limit doesn't need row-level locking.
+    await this.planLimits.assertProductLimitNotExceeded(tenantId);
     const { images, ...productInput } = input;
     const created = await this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
@@ -103,31 +117,61 @@ export class ProductsService {
   async list(tenantId: string, query: QueryProductsDto): Promise<PaginatedResult<typeof products.$inferSelect>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = buildFilters(tenantId, query);
     const orderBy = resolveSort(query.sortBy, query.sortDir, SORT_COLUMNS, "createdAt");
     const cacheKey = buildProductListCacheKey(tenantId, query);
 
     return this.cache.getOrSetTagged(
       cacheKey,
       this.listTtlSeconds,
-      () =>
-        this.dbRouter.read("eventual", (db) =>
+      async () => {
+        const searchIds = await this.searchCandidates(tenantId, query);
+        if (searchIds?.length === 0) return paginatedResult([], 0, page, limit);
+        const where = buildFilters(tenantId, query, searchIds);
+        // A search with no explicit sort is ranked by relevance (the
+        // storefront's search box); an explicit sort — merchant-admin's
+        // table columns — still wins, applied to the better matches.
+        const rankByRelevance = searchIds !== null && !query.sortBy;
+
+        return this.dbRouter.read("eventual", (db) =>
           withTenantContext(db, tenantId, async (tx) => {
+            if (rankByRelevance) {
+              // At most MAX_CANDIDATES rows, so ordering + paging in memory
+              // is cheap; Postgres can't ORDER BY "position in this list".
+              const rank = new Map(searchIds.map((id, i) => [id, i]));
+              const rows = (await tx.select().from(products).where(where)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+              const offset = offsetFor(page, limit);
+              return paginatedResult(rows.slice(offset, offset + limit), rows.length, page, limit);
+            }
             const [rows, [{ total }]] = await Promise.all([
               tx.select().from(products).where(where).orderBy(orderBy).limit(limit).offset(offsetFor(page, limit)),
               tx.select({ total: count() }).from(products).where(where),
             ]);
             return paginatedResult(rows, total, page, limit);
           }),
-        ),
+        );
+      },
       (result) => [productsAllListsTag(tenantId), ...result.data.map((product) => productTag(tenantId, product.id))],
     );
+  }
+
+  /** Elasticsearch candidates for query.search; null = no search term, or search unavailable (fall back to ILIKE). */
+  private searchCandidates(tenantId: string, query: QueryProductsDto): Promise<string[] | null> {
+    if (!query.search) return Promise.resolve(null);
+    return this.productSearch.searchIds(tenantId, query.search, {
+      status: query.status,
+      categoryId: query.categoryId,
+      isActive: query.isActive,
+    });
   }
 
   /** All matching rows as CSV, ignoring page/limit — an export is "give me
    * everything that matches the filter", not one page of it. */
   async exportCsv(tenantId: string, query: QueryProductsDto): Promise<string> {
-    const where = buildFilters(tenantId, query);
+    // Same matching as the table the merchant is looking at, so "export"
+    // gives exactly the rows the search showed.
+    const searchIds = await this.searchCandidates(tenantId, query);
+    if (searchIds?.length === 0) return toCsv([], EXPORT_COLUMNS);
+    const where = buildFilters(tenantId, query, searchIds);
     const orderBy = resolveSort(query.sortBy, query.sortDir, SORT_COLUMNS, "createdAt");
 
     const rows = await this.dbRouter.read("eventual", (db) =>

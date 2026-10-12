@@ -5,21 +5,27 @@ import { serverFetch } from "../../lib/api";
 import { AccountForm } from "./account-form";
 
 interface MeResponse {
-  customer: { sub: string; phone: string; name?: string | null };
+  customer: { sub: string; phone: string; name?: string | null; whatsappOptIn?: boolean };
+  tenant?: { name?: string };
 }
 
 export default async function AccountPage() {
   const cookieHeader = (await cookies()).toString();
   const res = await serverFetch("/storefront/auth/me", cookieHeader);
   if (res.status === 401) redirect("/login?next=/account");
-  const { customer }: MeResponse = await res.json();
+  const { customer, tenant }: MeResponse = await res.json();
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-8">
       <h1 className="sf-display text-3xl font-semibold">Your account</h1>
 
       <div className="rounded-2xl border border-border p-6">
-        <AccountForm initialName={customer.name ?? null} phone={customer.phone} />
+        <AccountForm
+          initialName={customer.name ?? null}
+          phone={customer.phone}
+          initialWhatsAppOptIn={customer.whatsappOptIn ?? false}
+          storeName={tenant?.name}
+        />
       </div>
 
       <div className="flex flex-col gap-1 rounded-2xl border border-border p-6">

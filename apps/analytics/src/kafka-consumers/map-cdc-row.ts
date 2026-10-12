@@ -1,3 +1,5 @@
+import { descriptionToPlainText } from "./description-to-text";
+
 /**
  * Debezium reports raw Postgres column names (snake_case) — these map
  * that shape onto product-search.mapping.ts/category-search.mapping.ts's
@@ -39,7 +41,7 @@ export function mapProductRow(row: ProductRow, sourceTsMs: number) {
     categoryId: row.category_id,
     name: row.name,
     slug: row.slug,
-    description: row.description,
+    description: descriptionToPlainText(row.description),
     priceCents: row.price_cents,
     status: row.status,
     isActive: row.is_active,

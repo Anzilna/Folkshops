@@ -20,12 +20,14 @@ Triggered manually, e.g.:
     "
 """
 
-import json
 import logging
 from uuid import UUID
 
+from sqlalchemy import select
+
 from app.application.documents.index import DocumentIndexer
 from app.domain.models.chunk import Chunk
+from app.infrastructure.persistence.models import DocumentChunkRow
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +37,21 @@ async def reembed_document(ctx: dict, tenant_id: str, document_id: str) -> None:
     indexer: DocumentIndexer = ctx["indexer"]
     tenant_uuid, doc_uuid = UUID(tenant_id), UUID(document_id)
 
-    async with db.tenant_context(tenant_id) as conn:
-        rows = await conn.fetch(
-            "SELECT id, chunk_index, content, char_count, metadata "
-            "FROM document_chunks WHERE document_id = $1 ORDER BY chunk_index",
-            doc_uuid,
+    # Explicit columns, not select(DocumentChunkRow): the old embedding is
+    # about to be replaced, no point pulling 1536 floats per chunk back out.
+    stmt = (
+        select(
+            DocumentChunkRow.id,
+            DocumentChunkRow.chunk_index,
+            DocumentChunkRow.content,
+            DocumentChunkRow.char_count,
+            DocumentChunkRow.meta,
         )
+        .where(DocumentChunkRow.document_id == doc_uuid)
+        .order_by(DocumentChunkRow.chunk_index)
+    )
+    async with db.tenant_context(tenant_id) as session:
+        rows = (await session.execute(stmt)).all()
 
     if not rows:
         logger.warning("reembed_document: no chunks found for document %s", document_id)
@@ -48,13 +59,13 @@ async def reembed_document(ctx: dict, tenant_id: str, document_id: str) -> None:
 
     chunks = [
         Chunk(
-            id=r["id"],
+            id=r.id,
             document_id=doc_uuid,
             tenant_id=tenant_uuid,
-            chunk_index=r["chunk_index"],
-            content=r["content"],
-            char_count=r["char_count"],
-            metadata=json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"],
+            chunk_index=r.chunk_index,
+            content=r.content,
+            char_count=r.char_count,
+            metadata=r.meta,
         )
         for r in rows
     ]

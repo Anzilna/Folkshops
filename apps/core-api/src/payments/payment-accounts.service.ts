@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { DbRouter } from "../database/db-router";
-import { paymentAccounts } from "../database/schema";
+import { outboxEvents, paymentAccounts } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 import { CacheService } from "../redis/cache.service";
 import { storeCacheKey } from "../storefront/store-cache";
@@ -85,17 +85,38 @@ export class PaymentAccountsService {
 
     const row = await this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) => {
-        const [updated] = await tx
+        let [updated] = await tx
           .update(paymentAccounts)
           .set({
             live: status.chargesEnabled,
             payoutsEnabled: status.payoutsEnabled,
             detailsSubmitted: status.detailsSubmitted,
-            activatedAt: status.chargesEnabled && !existing.activatedAt ? new Date() : existing.activatedAt,
             updatedAt: new Date(),
           })
           .where(eq(paymentAccounts.tenantId, tenantId))
           .returning();
+
+        // First activation only — the `activated_at IS NULL` condition
+        // makes this a claim, so two "Refresh status" clicks racing each
+        // other can't both write the outbox row (and send the "payments
+        // are live" email twice). apps/workers: handlers/billing-events.ts.
+        if (status.chargesEnabled) {
+          const [activated] = await tx
+            .update(paymentAccounts)
+            .set({ activatedAt: new Date() })
+            .where(and(eq(paymentAccounts.tenantId, tenantId), isNull(paymentAccounts.activatedAt)))
+            .returning();
+          if (activated) {
+            updated = activated;
+            await tx.insert(outboxEvents).values({
+              tenantId,
+              eventType: "payments.activated",
+              aggregateType: "payment_account",
+              aggregateId: activated.id,
+              payload: {},
+            });
+          }
+        }
         return updated;
       }),
     );

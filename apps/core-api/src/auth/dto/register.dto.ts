@@ -1,4 +1,4 @@
-import { IsEmail, IsString, Matches, MinLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, Matches, MinLength } from "class-validator";
 
 export class RegisterDto {
   @IsString()
@@ -21,4 +21,12 @@ export class RegisterDto {
   @IsString()
   @MinLength(1)
   name!: string;
+
+  // Optional here (class-validator level) so AuthService.register() can
+  // throw its own clearer "A plan must be selected" message — but it is
+  // NOT optional in practice: register() rejects a missing planSlug
+  // outright, no default. See that method's own comment.
+  @IsOptional()
+  @IsString()
+  planSlug?: string;
 }

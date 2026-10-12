@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch, notifyCartChanged, type Cart } from "../../lib/api";
+import { WhatsAppOptIn } from "../whatsapp-opt-in";
 import { formatPrice } from "../../lib/format";
 import { ProductArt } from "../product-card";
 
@@ -17,9 +18,19 @@ export default function CartPage() {
   // checkout button doesn't flash "not accepting payments" for a moment
   // before the real answer arrives.
   const [paymentsEnabled, setPaymentsEnabled] = useState<boolean | null>(null);
+  const [storeName, setStoreName] = useState<string | undefined>(undefined);
+  // The customer's saved choice, and the checkbox's current state — only
+  // PATCHed at checkout if they differ, so an unchanged box costs nothing.
+  const [savedOptIn, setSavedOptIn] = useState(false);
+  const [whatsappOptIn, setWhatsAppOptIn] = useState(false);
+  const [phone, setPhone] = useState<string | undefined>(undefined);
 
   async function load() {
-    const [cartRes, storeRes] = await Promise.all([apiFetch("/storefront/cart"), apiFetch("/storefront/store")]);
+    const [cartRes, storeRes, meRes] = await Promise.all([
+      apiFetch("/storefront/cart"),
+      apiFetch("/storefront/store"),
+      apiFetch("/storefront/auth/me"),
+    ]);
     if (cartRes.status === 401) {
       router.push("/login?next=/cart");
       return;
@@ -30,8 +41,15 @@ export default function CartPage() {
     }
     setCart(await cartRes.json());
     if (storeRes.ok) {
-      const store: { paymentsEnabled: boolean } = await storeRes.json();
+      const store: { paymentsEnabled: boolean; name?: string } = await storeRes.json();
       setPaymentsEnabled(store.paymentsEnabled);
+      setStoreName(store.name);
+    }
+    if (meRes.ok) {
+      const { customer }: { customer: { phone: string; whatsappOptIn?: boolean } } = await meRes.json();
+      setSavedOptIn(customer.whatsappOptIn ?? false);
+      setWhatsAppOptIn(customer.whatsappOptIn ?? false);
+      setPhone(customer.phone);
     }
   }
 
@@ -56,6 +74,13 @@ export default function CartPage() {
   async function checkout() {
     setBusy("checkout");
     setError(null);
+    // Saved before the order exists, so the order.paid confirmation that
+    // follows payment already sees the opt-in. A failure here doesn't block
+    // the purchase — it only means no WhatsApp message.
+    if (whatsappOptIn !== savedOptIn) {
+      const optRes = await apiFetch("/storefront/auth/me", { method: "PATCH", body: JSON.stringify({ whatsappOptIn }) }).catch(() => null);
+      if (optRes?.ok) setSavedOptIn(whatsappOptIn);
+    }
     const res = await apiFetch("/storefront/orders/checkout", { method: "POST" });
     if (!res.ok) {
       setError("Checkout failed — please try again.");
@@ -141,6 +166,7 @@ export default function CartPage() {
                 </p>
               ) : (
                 <>
+                  <WhatsAppOptIn checked={whatsappOptIn} onChange={setWhatsAppOptIn} storeName={storeName} phone={phone} disabled={busy === "checkout"} />
                   <Button
                     variant="primary"
                     onClick={checkout}

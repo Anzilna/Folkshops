@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Field, Input } from "@folkshops/ui";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiFetch, getStoredTenantSlug, TENANT_SLUG_COOKIE, tenantSlugCookieString } from "../../lib/api";
@@ -64,6 +65,9 @@ export function LoginForm() {
       <Field label="Password" htmlFor="password">
         <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       </Field>
+      <Link href="/forgot-password" className="-mt-2 self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+        Forgot password?
+      </Link>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

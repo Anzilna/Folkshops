@@ -7,8 +7,10 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
 
-# Postgres — raw asyncpg, no ORM (same "raw driver, no framework" choice
-# core-api made with Drizzle-on-pg.Pool over Prisma; see ADR 0011).
+# Postgres — SQLAlchemy 2.0 async ORM with asyncpg as the driver underneath
+# (the asyncio extra pulls in greenlet, which async SQLAlchemy requires).
+# Migrations stay hand-written SQL, see infrastructure/persistence/postgres.py.
+sqlalchemy[asyncio]==2.0.43
 asyncpg==0.30.0
 pgvector==0.3.6
 

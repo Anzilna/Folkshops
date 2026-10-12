@@ -73,12 +73,12 @@ export class CustomerAuthController {
   async me(@CurrentCustomer() customer: CustomerJwtPayload, @CurrentTenant() tenant?: TenantContext) {
     // customer (the JWT payload) has no `name` — see findById()'s comment.
     const row = await this.auth.findById(customer.tenantId, customer.sub);
-    return { customer: { ...customer, name: row?.name ?? null }, tenant };
+    return { customer: { ...customer, name: row?.name ?? null, whatsappOptIn: row?.whatsappOptIn ?? false }, tenant };
   }
 
   @UseGuards(CustomerJwtAuthGuard, CustomerTenantMatchGuard)
   @Patch("me")
   updateMe(@Body() dto: UpdateMeDto, @CurrentCustomer() customer: CustomerJwtPayload) {
-    return this.auth.updateName(customer.tenantId, customer.sub, dto.name);
+    return this.auth.updateMe(customer.tenantId, customer.sub, dto);
   }
 }

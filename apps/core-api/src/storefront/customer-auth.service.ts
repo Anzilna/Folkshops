@@ -154,13 +154,26 @@ export class CustomerAuthService {
     );
   }
 
-  /** Self-service — a customer editing their own display name. Phone isn't
-   * editable here: it's the OTP login identity, same reasoning as
-   * merchant-admin's staff-side UpdateCustomerDto not allowing it either. */
-  async updateName(tenantId: string, customerId: string, name: string) {
+  /** Self-service — a customer editing their own profile: display name
+   * and the WhatsApp order-updates opt-in. Phone isn't editable here: it's
+   * the OTP login identity, same reasoning as merchant-admin's staff-side
+   * UpdateCustomerDto not allowing it either. whatsappOptInAt is stamped on
+   * every opt-in and cleared on opt-out — it records when the current
+   * consent was given, which is what Meta's opt-in policy asks you to keep. */
+  async updateMe(tenantId: string, customerId: string, input: { name?: string; whatsappOptIn?: boolean }) {
     const [customer] = await this.dbRouter.write((db) =>
       withTenantContext(db, tenantId, async (tx) =>
-        tx.update(customers).set({ name, updatedAt: new Date() }).where(eq(customers.id, customerId)).returning(),
+        tx
+          .update(customers)
+          .set({
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.whatsappOptIn !== undefined
+              ? { whatsappOptIn: input.whatsappOptIn, whatsappOptInAt: input.whatsappOptIn ? new Date() : null }
+              : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, customerId))
+          .returning(),
       ),
     );
     return customer ?? null;

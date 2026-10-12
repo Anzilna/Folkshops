@@ -104,10 +104,12 @@ curl http://localhost:9200/_cluster/health
 #    apps/analytics both consume its compiled output, not raw TS):
 pnpm --filter @folkshops/events build
 
-# 5. Run the analytics service natively (not a compose service, same
-#    precedent as apps/workers):
+# 5. Run the analytics service — either natively:
 cp apps/analytics/.env.example apps/analytics/.env
 pnpm --filter @folkshops/analytics-api dev
+#    ...or in Docker (hot reload via bind mounts, builds @folkshops/events
+#    itself on start; don't run both, port 4100 conflict):
+docker compose up -d --build analytics
 curl http://localhost:4100/health
 # -> {"status":"ok"}
 

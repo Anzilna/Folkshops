@@ -22,6 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Folkshops
             </Link>
             <nav className="flex items-center gap-1">
+              <Link href="/pricing" className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                Pricing
+              </Link>
               <a href={`${MERCHANT_ADMIN_URL}/login`} className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 Sign in
               </a>

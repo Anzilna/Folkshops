@@ -6,17 +6,23 @@ import { clearAuthCookies, setAuthCookies, STAFF_ACCESS_TOKEN_COOKIE, STAFF_REFR
 const COOKIE_NAMES = { access: STAFF_ACCESS_TOKEN_COOKIE, refresh: STAFF_REFRESH_TOKEN_COOKIE };
 import { AuthService, JwtPayload } from "./auth.service";
 import { CurrentUser } from "./decorators/current-user.decorator";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { IdentifyDto } from "./dto/identify.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { TenantMatchGuard } from "./guards/tenant-match.guard";
+import { PasswordResetService } from "./password-reset.service";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Post("register")
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
@@ -35,6 +41,26 @@ export class AuthController {
   @Post("identify")
   async identify(@Body() dto: IdentifyDto) {
     return { stores: await this.auth.identify(dto.email) };
+  }
+
+  // Same IP throttle as identify(); PasswordResetService adds a per-email
+  // cooldown on top. Identical response whether or not the email exists.
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("forgot-password")
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.passwordReset.requestReset(dto.email);
+    return { ok: true };
+  }
+
+  // Throttled too — the token is 256 bits so guessing is hopeless, but
+  // there's no reason to let anyone try at full speed.
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post("reset-password")
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.passwordReset.resetPassword(dto.token, dto.password);
+    return { ok: true };
   }
 
   @Post("login")

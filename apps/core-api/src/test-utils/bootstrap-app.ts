@@ -36,10 +36,21 @@ export interface TestTenant {
   slug: string;
 }
 
-/** Registers a fresh store via the real /auth/register endpoint — same path a real merchant signup takes, not a DB shortcut. */
+/**
+ * Registers a fresh store via the real /auth/register endpoint — same path
+ * a real merchant signup takes, not a DB shortcut.
+ *
+ * `planSlug` defaults to "free" HERE, in test infrastructure — not
+ * server-side. AuthService.register() itself rejects a missing planSlug
+ * outright (see its own comment); the hidden `free` plan (isActive: false)
+ * exists specifically so test fixtures can ask for it by name without
+ * touching real Stripe on every single test-tenant creation across the
+ * whole suite. No real registration flow ever sends this slug.
+ */
 export async function createTestTenant(
   app: INestApplication,
-): Promise<TestTenant & { ownerEmail: string; ownerPassword: string }> {
+  planSlug: string = "free",
+): Promise<TestTenant & { ownerEmail: string; ownerPassword: string; checkoutUrl?: string }> {
   const suffix = randomUUID().slice(0, 8);
   const slug = `it-${suffix}`;
   const ownerEmail = `owner-${suffix}@test.local`;
@@ -53,10 +64,11 @@ export async function createTestTenant(
       email: ownerEmail,
       password: ownerPassword,
       name: "Owner",
+      planSlug,
     })
     .expect(201);
 
-  return { id: res.body.tenant.id, slug, ownerEmail, ownerPassword };
+  return { id: res.body.tenant.id, slug, ownerEmail, ownerPassword, checkoutUrl: res.body.checkoutUrl };
 }
 
 function rawPgUrl(): string {
@@ -89,9 +101,21 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     // needed" shape — see its own schema comment. Same class of gap as
     // bug #17.
     await client.query(`DELETE FROM outbox_events WHERE tenant_id = $1`, [tenantId]);
+    // subscription_customer_lookup is the same non-RLS shape (see
+    // subscriptions.ts's own comment) — must go before `subscriptions`
+    // itself is deleted below isn't actually required (no FK between the
+    // two tables pointing that direction), but it FKs `tenants`, so it
+    // must go before the final `DELETE FROM tenants`. Same class of gap
+    // as bug #17 — every registered test tenant gets one of these rows
+    // now (AuthService.register() always creates a subscription).
+    await client.query(`DELETE FROM subscription_customer_lookup WHERE tenant_id = $1`, [tenantId]);
 
     await client.query("BEGIN");
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+    // subscriptions FKs tenants and is RLS-protected — same bug #17 class
+    // of gap, caught here before it broke every test that registers a
+    // tenant (which is nearly all of them, via createTestTenant()).
+    await client.query(`DELETE FROM subscriptions WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM otp_codes WHERE tenant_id = $1`, [tenantId]);
     // cart_items -> carts -> customers, in that order (each FKs the one
     // before it) — missing before now, only surfaced once a test actually

@@ -26,6 +26,11 @@ export class SearchService {
     }
   }
 
+  /** Removes every document whose `field` equals `value` — for CDC deletes, whose event lacks the fields a composite doc id is built from (see cdc-consumer.service.ts). Idempotent: matching nothing is fine. */
+  async deleteByField(alias: IndexAlias, field: string, value: string): Promise<void> {
+    await this.client.deleteByQuery({ index: alias, query: { term: { [field]: value } }, refresh: true });
+  }
+
   async getDocument<T>(alias: IndexAlias, id: string): Promise<T | null> {
     try {
       const res = await this.client.get<T>({ index: alias, id });

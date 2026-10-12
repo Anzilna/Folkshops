@@ -3,13 +3,15 @@ The only file that knows document_chunks' table shape / pgvector's
 `<=>` cosine-distance operator. RAG code depends on VectorStore only.
 """
 
-import json
 import logging
 from uuid import UUID
+
+from sqlalchemy import delete, insert, select
 
 from app.domain.errors import VectorStoreError
 from app.domain.models.chunk import Chunk
 from app.domain.models.retrieval import RetrievalResult
+from app.infrastructure.persistence.models import DocumentChunkRow
 from app.infrastructure.persistence.postgres import Db
 
 logger = logging.getLogger(__name__)
@@ -24,29 +26,27 @@ class PgVectorStore:
             return
         document_id = chunks[0].document_id
         try:
-            async with self._db.tenant_context(str(tenant_id)) as conn:
+            async with self._db.tenant_context(str(tenant_id)) as session:
                 # Whole-document replace, not incremental upsert — same
                 # "replace the whole ordered set" shape as core-api's own
                 # product_images gallery. A re-ingested/retried document
                 # never leaves stale chunks from a previous attempt behind.
-                await conn.execute("DELETE FROM document_chunks WHERE document_id = $1", document_id)
-                await conn.executemany(
-                    """
-                    INSERT INTO document_chunks
-                        (id, document_id, tenant_id, chunk_index, content, char_count, metadata, embedding)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                    """,
+                await session.execute(delete(DocumentChunkRow).where(DocumentChunkRow.document_id == document_id))
+                # insert() + a list of dicts is SQLAlchemy's bulk path — one
+                # executemany, not one ORM object per chunk.
+                await session.execute(
+                    insert(DocumentChunkRow),
                     [
-                        (
-                            c.id,
-                            c.document_id,
-                            c.tenant_id,
-                            c.chunk_index,
-                            c.content,
-                            c.char_count,
-                            json.dumps(c.metadata),
-                            c.embedding,
-                        )
+                        {
+                            "id": c.id,
+                            "document_id": c.document_id,
+                            "tenant_id": c.tenant_id,
+                            "chunk_index": c.chunk_index,
+                            "content": c.content,
+                            "char_count": c.char_count,
+                            "meta": c.metadata,
+                            "embedding": c.embedding,
+                        }
                         for c in chunks
                     ],
                 )
@@ -61,47 +61,39 @@ class PgVectorStore:
         limit: int = 10,
         metadata_filter: dict | None = None,
     ) -> list[RetrievalResult]:
+        # `embedding <=> :query` in SQL. 1 - cosine_distance =
+        # cosine_similarity, so `score` is intuitively "higher is more
+        # relevant" for every caller, regardless of which distance operator
+        # pgvector uses internally.
+        distance = DocumentChunkRow.embedding.cosine_distance(query_embedding)
+        stmt = (
+            select(
+                DocumentChunkRow.id,
+                DocumentChunkRow.document_id,
+                DocumentChunkRow.content,
+                DocumentChunkRow.meta,
+                (1 - distance).label("score"),
+            )
+            .order_by(distance)
+            .limit(limit)
+        )
+        if metadata_filter:
+            stmt = stmt.where(DocumentChunkRow.meta.contains(metadata_filter))  # jsonb @>
+
         try:
-            async with self._db.tenant_context(str(tenant_id)) as conn:
-                # 1 - cosine_distance = cosine_similarity, so `score` is
-                # intuitively "higher is more relevant" for every caller,
-                # regardless of which distance operator pgvector uses
-                # internally.
-                if metadata_filter:
-                    rows = await conn.fetch(
-                        """
-                        SELECT id, document_id, content, metadata, 1 - (embedding <=> $1) AS score
-                        FROM document_chunks
-                        WHERE metadata @> $2::jsonb
-                        ORDER BY embedding <=> $1
-                        LIMIT $3
-                        """,
-                        query_embedding,
-                        json.dumps(metadata_filter),
-                        limit,
-                    )
-                else:
-                    rows = await conn.fetch(
-                        """
-                        SELECT id, document_id, content, metadata, 1 - (embedding <=> $1) AS score
-                        FROM document_chunks
-                        ORDER BY embedding <=> $1
-                        LIMIT $2
-                        """,
-                        query_embedding,
-                        limit,
-                    )
+            async with self._db.tenant_context(str(tenant_id)) as session:
+                rows = (await session.execute(stmt)).all()
         except Exception as exc:
             logger.exception("pgvector search failed")
             raise VectorStoreError(f"Vector search failed: {exc}") from exc
 
         return [
             RetrievalResult(
-                chunk_id=r["id"],
-                document_id=r["document_id"],
-                content=r["content"],
-                score=float(r["score"]),
-                metadata=json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"],
+                chunk_id=r.id,
+                document_id=r.document_id,
+                content=r.content,
+                score=float(r.score),
+                metadata=r.meta,
             )
             for r in rows
         ]
@@ -109,12 +101,12 @@ class PgVectorStore:
     async def delete(self, tenant_id: UUID, chunk_ids: list[UUID]) -> None:
         if not chunk_ids:
             return
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            await conn.execute("DELETE FROM document_chunks WHERE id = ANY($1::uuid[])", chunk_ids)
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            await session.execute(delete(DocumentChunkRow).where(DocumentChunkRow.id.in_(chunk_ids)))
 
     async def delete_document(self, tenant_id: UUID, document_id: UUID) -> None:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            await conn.execute("DELETE FROM document_chunks WHERE document_id = $1", document_id)
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            await session.execute(delete(DocumentChunkRow).where(DocumentChunkRow.document_id == document_id))
 
     async def health_check(self) -> bool:
         return await self._db.health_check()

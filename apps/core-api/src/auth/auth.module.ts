@@ -1,10 +1,12 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
+import { SubscriptionsCoreModule } from "../subscriptions/subscriptions-core.module";
 import { TenantsModule } from "../tenants/tenants.module";
 import { UsersModule } from "../users/users.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
+import { PasswordResetService } from "./password-reset.service";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { TenantMatchGuard } from "./guards/tenant-match.guard";
 import { TokensModule } from "./tokens.module";
@@ -23,9 +25,9 @@ const jwtModule = JwtModule.registerAsync({
 });
 
 @Module({
-  imports: [TenantsModule, UsersModule, jwtModule, TokensModule],
+  imports: [TenantsModule, UsersModule, jwtModule, TokensModule, SubscriptionsCoreModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, TenantMatchGuard],
+  providers: [AuthService, PasswordResetService, JwtAuthGuard, TenantMatchGuard],
   // JwtModule re-exported, not just the guards: JwtAuthGuard's constructor
   // needs JwtService, and any module that imports AuthModule purely to use
   // that guard (e.g. ProductsModule) needs it resolvable in its own

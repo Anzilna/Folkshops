@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { TokensModule } from "../auth/tokens.module";
 import { TenantsModule } from "../tenants/tenants.module";
+import { PlatformAdminDashboardController } from "./dashboard/platform-admin-dashboard.controller";
+import { PlatformAdminDashboardService } from "./dashboard/platform-admin-dashboard.service";
 import { PlatformAdminAuthController } from "./platform-admin-auth.controller";
 import { PlatformAdminAuthService } from "./platform-admin-auth.service";
 import { PlatformAdminJwtAuthGuard } from "./guards/platform-admin-jwt-auth.guard";
@@ -24,7 +26,7 @@ const jwtModule = JwtModule.registerAsync({
 
 @Module({
   imports: [jwtModule, TokensModule, TenantsModule],
-  controllers: [PlatformAdminAuthController, PlatformAdminTenantsController],
-  providers: [PlatformAdminAuthService, PlatformAdminsService, PlatformAdminJwtAuthGuard],
+  controllers: [PlatformAdminAuthController, PlatformAdminTenantsController, PlatformAdminDashboardController],
+  providers: [PlatformAdminAuthService, PlatformAdminsService, PlatformAdminJwtAuthGuard, PlatformAdminDashboardService],
 })
 export class PlatformAdminModule {}

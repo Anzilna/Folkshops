@@ -15,29 +15,22 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import select, update
+
 from app.application.documents.chunk import Chunker
 from app.application.documents.index import DocumentIndexer
 from app.application.documents.parse import normalize_text, parse_document
 from app.domain.errors import DocumentNotFound
 from app.domain.models.document import Document, DocumentSource, DocumentStatus
 from app.infrastructure.messaging.kafka import EventPublisher
+from app.infrastructure.persistence.models import DocumentRow
 from app.infrastructure.persistence.postgres import Db
 
 logger = logging.getLogger(__name__)
 
 
-def _row_to_document(row) -> Document:
-    return Document(
-        id=row["id"],
-        tenant_id=row["tenant_id"],
-        filename=row["filename"],
-        mime_type=row["mime_type"],
-        source=DocumentSource(row["source"]),
-        status=DocumentStatus(row["status"]),
-        error=row["error"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
+def _to_document(row: DocumentRow) -> Document:
+    return Document.model_validate(row, from_attributes=True)
 
 
 class DocumentService:
@@ -46,61 +39,55 @@ class DocumentService:
         self._events = events
 
     async def create(self, tenant_id: UUID, filename: str, mime_type: str) -> Document:
-        doc_id = uuid4()
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO documents (id, tenant_id, filename, mime_type, source, status)
-                VALUES ($1, $2, $3, $4, 'upload', 'uploaded')
-                RETURNING *
-                """,
-                doc_id,
-                tenant_id,
-                filename,
-                mime_type,
-            )
-        await self._events.publish_document_event("document.created", tenant_id, doc_id)
-        return _row_to_document(row)
+        row = DocumentRow(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            filename=filename,
+            mime_type=mime_type,
+            source=DocumentSource.UPLOAD.value,
+            status=DocumentStatus.UPLOADED,
+        )
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            session.add(row)
+            # Sends the INSERT now (inside the transaction) so created_at/
+            # updated_at come back from Postgres before we read them below.
+            await session.flush()
+        await self._events.publish_document_event("document.created", tenant_id, row.id)
+        return _to_document(row)
 
     async def get(self, tenant_id: UUID, document_id: UUID) -> Document:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            row = await conn.fetchrow("SELECT * FROM documents WHERE id = $1", document_id)
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            row = await session.get(DocumentRow, document_id)
         if row is None:
             raise DocumentNotFound(f"Document {document_id} not found")
-        return _row_to_document(row)
+        return _to_document(row)
 
     async def list_for_tenant(self, tenant_id: UUID, limit: int = 50) -> list[Document]:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM documents ORDER BY created_at DESC LIMIT $1", limit
-            )
-        return [_row_to_document(r) for r in rows]
+        # No tenant_id WHERE clause needed — RLS (set by tenant_context)
+        # already restricts the rows Postgres will return.
+        stmt = select(DocumentRow).order_by(DocumentRow.created_at.desc()).limit(limit)
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            rows = (await session.scalars(stmt)).all()
+        return [_to_document(r) for r in rows]
+
+    async def _set_status(self, tenant_id: UUID, document_id: UUID, **values) -> None:
+        stmt = (
+            update(DocumentRow)
+            .where(DocumentRow.id == document_id)
+            .values(**values, updated_at=datetime.now(UTC))
+        )
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            await session.execute(stmt)
 
     async def mark_processing(self, tenant_id: UUID, document_id: UUID) -> None:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            await conn.execute(
-                "UPDATE documents SET status = 'processing', updated_at = $2 WHERE id = $1",
-                document_id,
-                datetime.now(UTC),
-            )
+        await self._set_status(tenant_id, document_id, status=DocumentStatus.PROCESSING)
 
     async def mark_indexed(self, tenant_id: UUID, document_id: UUID) -> None:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            await conn.execute(
-                "UPDATE documents SET status = 'indexed', error = NULL, updated_at = $2 WHERE id = $1",
-                document_id,
-                datetime.now(UTC),
-            )
+        await self._set_status(tenant_id, document_id, status=DocumentStatus.INDEXED, error=None)
         await self._events.publish_document_event("document.indexed", tenant_id, document_id)
 
     async def mark_failed(self, tenant_id: UUID, document_id: UUID, error: str) -> None:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            await conn.execute(
-                "UPDATE documents SET status = 'failed', error = $2, updated_at = $3 WHERE id = $1",
-                document_id,
-                error[:2000],
-                datetime.now(UTC),
-            )
+        await self._set_status(tenant_id, document_id, status=DocumentStatus.FAILED, error=error[:2000])
         await self._events.publish_document_event("document.failed", tenant_id, document_id)
 
 

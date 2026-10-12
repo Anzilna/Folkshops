@@ -13,9 +13,12 @@ shape.
 import time
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+
 from app.application.rag.pipeline import RagPipeline
 from app.domain.interfaces.llm import LLMMessage, LLMProvider, LLMRequest
 from app.domain.models.chat import ChatResponse, Role
+from app.infrastructure.persistence.models import ConversationRow, MessageRow
 from app.infrastructure.persistence.postgres import Db
 from app.observability.metrics import Metrics
 
@@ -35,30 +38,29 @@ class ChatService:
         self._metrics = metrics
 
     async def _get_or_create_conversation(self, tenant_id: UUID, actor_id: str, conversation_id: UUID | None) -> UUID:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
+        async with self._db.tenant_context(str(tenant_id)) as session:
             if conversation_id is not None:
-                row = await conn.fetchrow(
-                    "SELECT id FROM conversations WHERE id = $1 AND actor_id = $2", conversation_id, actor_id
+                existing = await session.scalar(
+                    select(ConversationRow.id).where(
+                        ConversationRow.id == conversation_id, ConversationRow.actor_id == actor_id
+                    )
                 )
-                if row is not None:
-                    return row["id"]
-            row = await conn.fetchrow(
-                "INSERT INTO conversations (id, tenant_id, actor_id) VALUES ($1, $2, $3) RETURNING id",
-                uuid4(),
-                tenant_id,
-                actor_id,
-            )
-            return row["id"]
+                if existing is not None:
+                    return existing
+            conversation = ConversationRow(id=uuid4(), tenant_id=tenant_id, actor_id=actor_id)
+            session.add(conversation)
+            return conversation.id
 
     async def _store_message(self, tenant_id: UUID, conversation_id: UUID, role: Role, content: str) -> None:
-        async with self._db.tenant_context(str(tenant_id)) as conn:
-            await conn.execute(
-                "INSERT INTO messages (id, conversation_id, tenant_id, role, content) VALUES ($1, $2, $3, $4, $5)",
-                uuid4(),
-                conversation_id,
-                tenant_id,
-                role.value,
-                content,
+        async with self._db.tenant_context(str(tenant_id)) as session:
+            session.add(
+                MessageRow(
+                    id=uuid4(),
+                    conversation_id=conversation_id,
+                    tenant_id=tenant_id,
+                    role=role.value,
+                    content=content,
+                )
             )
 
     async def send_message(

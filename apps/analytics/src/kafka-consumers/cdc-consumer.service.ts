@@ -66,11 +66,16 @@ export class CdcConsumerService implements OnModuleInit, OnModuleDestroy {
 
     try {
       if (event.op === "d") {
-        // Real hard deletes never happen for products/categories today
-        // (both are soft-deleted via UPDATE) — this branch is real,
-        // correct code for a future hard-delete/GDPR-erasure job, not
-        // dead code; see product-search.mapping.ts's own comment.
-        await this.search.delete(alias, docId);
+        // The app itself only soft-deletes, but hard deletes do happen:
+        // db:seed-demo's wipe-and-reseed, integration-test teardown, a
+        // future GDPR erasure. A delete event's `before` carries ONLY the
+        // primary key (the tables use Postgres's default REPLICA
+        // IDENTITY), so tenant_id is missing and `docId` above would be
+        // "product::<id>" — a document that doesn't exist, silently 404ing
+        // while the real one stayed in the index forever (found live while
+        // wiring core-api's search, docs/decisions/0014). Delete by the
+        // row's own id field instead — a uuid, unique across tenants.
+        await this.search.deleteByField(alias, isProducts ? "productId" : "categoryId", (row as { id: string }).id);
         outcome = "deleted";
       } else {
         const doc = isProducts

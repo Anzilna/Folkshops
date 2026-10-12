@@ -20,6 +20,8 @@ import { ProductsModule } from "./products/products.module";
 import { RedisThrottlerStorage } from "./redis/redis-throttler.storage";
 import { RedisModule } from "./redis/redis.module";
 import { StorefrontModule } from "./storefront/storefront.module";
+import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
+import { SubscriptionsWebhookModule } from "./subscriptions/subscriptions-webhook.module";
 import { TenancyModule } from "./tenancy/tenancy.module";
 import { TenantResolverMiddleware } from "./tenancy/tenant-resolver.middleware";
 import { TenantsModule } from "./tenants/tenants.module";
@@ -70,6 +72,8 @@ import { UsersModule } from "./users/users.module";
     PaymentAccountsModule,
     UploadsModule,
     NotificationsModule,
+    SubscriptionsModule,
+    SubscriptionsWebhookModule,
   ],
 })
 export class AppModule implements NestModule {

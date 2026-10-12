@@ -1,5 +1,6 @@
 import { EVENT_TYPE_TOPIC, type BusinessEventEnvelope } from "@folkshops/events";
 import { ensureProducerConnected, kafkaProducer } from "./kafka";
+import { log } from "node:console";
 
 export interface OutboxRowForPublish {
   id: string;
@@ -20,6 +21,8 @@ export interface OutboxRowForPublish {
  */
 export async function publishBusinessEvent(row: OutboxRowForPublish): Promise<void> {
   const topic = EVENT_TYPE_TOPIC[row.event_type];
+
+  
   if (!topic) return;
 
   const envelope: BusinessEventEnvelope = {

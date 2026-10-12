@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { tenants } from "./tenants";
 
 /**
@@ -45,19 +45,30 @@ import { tenants } from "./tenants";
  * without blocking the other. A row is only safe to stop re-polling once
  * BOTH are done; see relay.ts's poll query and ADR 0009's Failure modes.
  */
-export const outboxEvents = pgTable("outbox_events", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  tenantId: uuid("tenant_id")
-    .notNull()
-    .references(() => tenants.id),
-  eventType: text("event_type").notNull(),
-  aggregateType: text("aggregate_type").notNull(),
-  aggregateId: uuid("aggregate_id").notNull(),
-  payload: jsonb("payload").notNull(),
-  dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
-  processedAt: timestamp("processed_at", { withTimezone: true }),
-  kafkaPublishedAt: timestamp("kafka_published_at", { withTimezone: true }),
-  attempts: integer("attempts").notNull().default(0),
-  lastError: text("last_error"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const outboxEvents = pgTable(
+  "outbox_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    eventType: text("event_type").notNull(),
+    aggregateType: text("aggregate_type").notNull(),
+    aggregateId: uuid("aggregate_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    kafkaPublishedAt: timestamp("kafka_published_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  // Matches the index migration 0025 already created directly in SQL
+  // (drizzle-kit's own interactive generator can't express a NOT NULL
+  // backfill, so that whole migration was hand-written — see its own
+  // header comment). Declaring it here too isn't cosmetic: without it,
+  // drizzle-kit's snapshot diffing sees "an index the current schema code
+  // doesn't know about" and generates a DROP INDEX for it on the next
+  // unrelated `db:generate` run — caught here before it shipped.
+  (table) => [index("outbox_events_aggregate_idx").on(table.aggregateType, table.aggregateId)],
+);
