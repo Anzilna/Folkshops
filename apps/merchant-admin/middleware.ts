@@ -18,11 +18,13 @@ import { NextRequest, NextResponse } from "next/server";
  */
 const ACCESS_TOKEN_COOKIE = "fk_access_token";
 const REFRESH_TOKEN_COOKIE = "fk_refresh_token";
-const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/suspended"];
 // Public pages a signed-in merchant may still need: a reset link opened in
 // a browser that happens to hold an old session must still work, not
 // bounce to the dashboard.
-const PUBLIC_EVEN_WITH_SESSION = ["/reset-password"];
+// /suspended is where a signed-in user of a suspended store lands — it must
+// stay reachable WITH their session cookie, or it would redirect away.
+const PUBLIC_EVEN_WITH_SESSION = ["/reset-password", "/suspended"];
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function middleware(req: NextRequest) {

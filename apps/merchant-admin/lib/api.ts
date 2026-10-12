@@ -39,11 +39,22 @@ export async function apiFetch(path: string, init: RequestInit = {}, tenantSlug?
     headers.set("Content-Type", "application/json");
   }
 
-  return fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers,
     credentials: "include",
   });
+
+  // A platform admin suspended this store while the merchant had the app
+  // open: every call now answers 403 store_suspended. Send them to the
+  // explanation page rather than leaving each screen to show its own error.
+  // Not for the sign-in call itself: there the login form shows the same
+  // message inline, and there is no session to explain or sign out of.
+  if (res.status === 403 && typeof window !== "undefined" && !path.startsWith("/auth/login") && !window.location.pathname.startsWith("/suspended")) {
+    const body = await res.clone().json().catch(() => null);
+    if (body?.code === "store_suspended") window.location.assign("/suspended");
+  }
+  return res;
 }
 
 /** Reads the dev-only tenant-slug cookie from the browser's own document.cookie

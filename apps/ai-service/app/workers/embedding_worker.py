@@ -38,7 +38,7 @@ async def reembed_document(ctx: dict, tenant_id: str, document_id: str) -> None:
     tenant_uuid, doc_uuid = UUID(tenant_id), UUID(document_id)
 
     # Explicit columns, not select(DocumentChunkRow): the old embedding is
-    # about to be replaced, no point pulling 1536 floats per chunk back out.
+    # about to be replaced, no point pulling 384 floats per chunk back out.
     stmt = (
         select(
             DocumentChunkRow.id,

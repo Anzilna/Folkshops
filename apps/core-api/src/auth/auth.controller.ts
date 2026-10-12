@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { TenantMatchGuard } from "./guards/tenant-match.guard";
 import { PasswordResetService } from "./password-reset.service";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
+import { AllowSuspendedStore } from "../tenancy/store-available.guard";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
 
 @Controller("auth")
@@ -82,6 +83,7 @@ export class AuthController {
     return { ok: true };
   }
 
+  @AllowSuspendedStore()
   @Post("logout")
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const raw = req.cookies?.[STAFF_REFRESH_TOKEN_COOKIE];

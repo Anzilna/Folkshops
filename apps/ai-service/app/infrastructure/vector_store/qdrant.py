@@ -27,6 +27,7 @@ class QdrantVectorStore:
         query_embedding: list[float],
         limit: int = 10,
         metadata_filter: dict | None = None,
+        include_platform: bool = False,
     ) -> list[RetrievalResult]:
         raise NotImplementedError("QdrantVectorStore is not implemented yet — see this file's module docstring")
 

@@ -29,4 +29,6 @@ class ContextBuilder:
 
         text = "\n\n---\n\n".join(r.content for r in selected)
         citations = [Citation(document_id=r.document_id, chunk_id=r.chunk_id, score=r.score) for r in selected]
-        return RetrievedContext(text=text, citations=citations, truncated=truncated)
+        return RetrievedContext(
+            text=text, citations=citations, passages=[r.content for r in selected], truncated=truncated
+        )

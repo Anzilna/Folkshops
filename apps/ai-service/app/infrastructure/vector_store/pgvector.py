@@ -10,6 +10,7 @@ from sqlalchemy import delete, insert, select
 
 from app.domain.errors import VectorStoreError
 from app.domain.models.chunk import Chunk
+from app.domain.models.document import DocumentScope, scope_for
 from app.domain.models.retrieval import RetrievalResult
 from app.infrastructure.persistence.models import DocumentChunkRow
 from app.infrastructure.persistence.postgres import Db
@@ -41,6 +42,7 @@ class PgVectorStore:
                             "id": c.id,
                             "document_id": c.document_id,
                             "tenant_id": c.tenant_id,
+                            "scope": scope_for(c.tenant_id).value,
                             "chunk_index": c.chunk_index,
                             "content": c.content,
                             "char_count": c.char_count,
@@ -60,6 +62,7 @@ class PgVectorStore:
         query_embedding: list[float],
         limit: int = 10,
         metadata_filter: dict | None = None,
+        include_platform: bool = False,
     ) -> list[RetrievalResult]:
         # `embedding <=> :query` in SQL. 1 - cosine_distance =
         # cosine_similarity, so `score` is intuitively "higher is more
@@ -77,6 +80,15 @@ class PgVectorStore:
             .order_by(distance)
             .limit(limit)
         )
+        # A NULL embedding is a chunk waiting to be re-embedded after a model
+        # switch (migrations/0003) — it has no position in this vector space.
+        stmt = stmt.where(DocumentChunkRow.embedding.is_not(None))
+        # RLS lets every tenant READ platform rows (migrations/0006), so the
+        # default must be an explicit opt-out: a caller that doesn't ask for
+        # platform knowledge (the Shopper Assistant) never gets it, even
+        # though Postgres would allow it.
+        if not include_platform:
+            stmt = stmt.where(DocumentChunkRow.scope == DocumentScope.TENANT.value)
         if metadata_filter:
             stmt = stmt.where(DocumentChunkRow.meta.contains(metadata_filter))  # jsonb @>
 

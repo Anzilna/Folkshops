@@ -3,9 +3,11 @@
 import { AdminShell, ThemeToggle, type NavItem, type NotificationItem } from "@folkshops/ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { decideAgentAction, sendAgentMessage } from "../../lib/ai-api";
 import { apiFetch } from "../../lib/api";
-import { useTenantSlug } from "../../lib/hooks";
+import { useAiEntitlement, useTenantSlug } from "../../lib/hooks";
+import { AiUpgradeNotice } from "./ai-upgrade-notice";
 import { LogoutButton } from "./logout-button";
 
 interface NotificationRow {
@@ -32,6 +34,11 @@ const NAV_ITEMS: NavItem[] = [
     iconPath: "M16 19v-1.5a3.5 3.5 0 00-3.5-3.5h-5A3.5 3.5 0 004 17.5V19M9 11a3 3 0 100-6 3 3 0 000 6zM20 19v-1.5a3 3 0 00-2.5-2.96M15 4.1a3 3 0 010 5.8",
   },
   {
+    href: "/knowledge",
+    label: "Knowledge base",
+    iconPath: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5zM9 7h7M9 11h5",
+  },
+  {
     href: "/settings",
     label: "Settings",
     iconPath:
@@ -53,6 +60,9 @@ export function DashboardShell({ tenantName, userEmail, children }: DashboardShe
   const pathname = usePathname();
   const tenantSlug = useTenantSlug();
   const [notifications, setNotifications] = useState<NotificationItem[] | undefined>(undefined);
+  const entitlement = useAiEntitlement();
+  // One conversation per page load — ai-service persists every turn under it.
+  const conversationId = useRef<string | null>(null);
 
   useEffect(() => {
     if (tenantSlug === null) return;
@@ -69,6 +79,14 @@ export function DashboardShell({ tenantName, userEmail, children }: DashboardShe
     apiFetch("/notifications/read-all", { method: "POST" }, tenantSlug).catch(() => {});
   }
 
+  async function askCopilot(text: string, onProgress: (label: string) => void) {
+    const res = await sendAgentMessage(text, conversationId.current, onProgress);
+    conversationId.current = res.conversationId;
+    return { text: res.answer, sources: res.sources, activity: res.activity, actions: res.actions };
+  }
+
+  const aiAllowed = entitlement !== null && !("unavailable" in entitlement) && entitlement.allowed;
+
   return (
     <AdminShell
       brand={tenantName}
@@ -83,6 +101,20 @@ export function DashboardShell({ tenantName, userEmail, children }: DashboardShe
       onMarkNotificationRead={markRead}
       onMarkAllNotificationsRead={markAllRead}
       assistantName="Store Copilot"
+      assistant={{
+        onSend: askCopilot,
+        onAction: decideAgentAction,
+        subtitle: "Your products, stock, orders and documents",
+        greeting:
+          "Hi, I'm your Store Copilot. Ask me about your products, stock, orders or store policies. I can also prepare price and stock changes for you to confirm.",
+        suggestions: ["What's running low on stock?", "Show my latest orders", "What's our return policy?"],
+        locked:
+          entitlement === null ? (
+            <p className="text-xs text-muted-foreground">Checking your plan...</p>
+          ) : aiAllowed ? undefined : (
+            <AiUpgradeNotice entitlement={entitlement} compact />
+          ),
+      }}
     >
       {children}
     </AdminShell>

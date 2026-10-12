@@ -8,7 +8,9 @@ rather than a coin flip.
 
 import hashlib
 
-_DIM = 1536
+# Matches the schema's vector(384) column (migrations/0003), so the fake
+# provider keeps working in tests without its own migration.
+_DIM = 384
 
 
 def _fake_vector(text: str) -> list[float]:

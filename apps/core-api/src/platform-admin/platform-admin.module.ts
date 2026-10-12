@@ -3,6 +3,15 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { TokensModule } from "../auth/tokens.module";
 import { TenantsModule } from "../tenants/tenants.module";
+import { PlatformAdminActivityController } from "./activity/platform-admin-activity.controller";
+import { PlatformAdminActivityService } from "./activity/platform-admin-activity.service";
+import { PlatformAdminAuditController } from "./audit/platform-admin-audit.controller";
+import { PlatformAuditService } from "./audit/platform-audit.service";
+import { PlatformAdminPlansController } from "./plans/platform-admin-plans.controller";
+import { PlatformAdminPlansService } from "./plans/platform-admin-plans.service";
+import { PlatformAdminTeamController } from "./team/platform-admin-team.controller";
+import { PlatformAdminTeamService } from "./team/platform-admin-team.service";
+import { PlatformAdminTenantsService } from "./tenants/platform-admin-tenants.service";
 import { PlatformAdminDashboardController } from "./dashboard/platform-admin-dashboard.controller";
 import { PlatformAdminDashboardService } from "./dashboard/platform-admin-dashboard.service";
 import { PlatformAdminAuthController } from "./platform-admin-auth.controller";
@@ -26,7 +35,25 @@ const jwtModule = JwtModule.registerAsync({
 
 @Module({
   imports: [jwtModule, TokensModule, TenantsModule],
-  controllers: [PlatformAdminAuthController, PlatformAdminTenantsController, PlatformAdminDashboardController],
-  providers: [PlatformAdminAuthService, PlatformAdminsService, PlatformAdminJwtAuthGuard, PlatformAdminDashboardService],
+  controllers: [
+    PlatformAdminAuthController,
+    PlatformAdminTenantsController,
+    PlatformAdminDashboardController,
+    PlatformAdminPlansController,
+    PlatformAdminActivityController,
+    PlatformAdminAuditController,
+    PlatformAdminTeamController,
+  ],
+  providers: [
+    PlatformAdminAuthService,
+    PlatformAdminsService,
+    PlatformAdminJwtAuthGuard,
+    PlatformAdminDashboardService,
+    PlatformAdminTenantsService,
+    PlatformAdminPlansService,
+    PlatformAdminActivityService,
+    PlatformAdminTeamService,
+    PlatformAuditService,
+  ],
 })
 export class PlatformAdminModule {}

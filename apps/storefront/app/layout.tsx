@@ -3,7 +3,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { serverFetch } from "../lib/api";
 import { HeaderAccount } from "./header-account";
+import { ShoppingAssistant } from "./shopping-assistant";
 import { StoreNotFound } from "./store-not-found";
+import { StoreSuspended } from "./store-suspended";
 import "./globals.css";
 
 // Light-only by design (unlike merchant-admin/platform-admin, which follow
@@ -15,26 +17,47 @@ import "./globals.css";
 // store, so callers must render StoreNotFound instead of falling back to
 // placeholder branding. See lib/api.ts's resolveStoreSlug for why a bare
 // hostname only ever resolves to a store outside production.
-async function loadStore(): Promise<{ name: string; slug: string } | null> {
+type Store = { name: string; slug: string; aiAssistantEnabled?: boolean };
+
+// "suspended" is its own state, not "missing": core-api answers 403 with
+// code store_suspended when a platform admin has paused the store.
+type StoreState = { kind: "ok"; store: Store } | { kind: "suspended" } | { kind: "missing" };
+
+async function loadStore(): Promise<StoreState> {
   try {
     const res = await serverFetch("/storefront/store");
-    if (res.ok) return res.json();
+    if (res.ok) return { kind: "ok", store: await res.json() };
+    if (res.status === 403) {
+      const body = await res.json().catch(() => null);
+      if (body?.code === "store_suspended") return { kind: "suspended" };
+    }
   } catch {
     /* core-api down */
   }
-  return null;
+  return { kind: "missing" };
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const store = await loadStore();
-  if (!store) return { title: "Store not found — Folkshops" };
-  return { title: store.name, description: `Shop ${store.name}` };
+  const state = await loadStore();
+  if (state.kind === "suspended") return { title: "Store unavailable — Folkshops" };
+  if (state.kind !== "ok") return { title: "Store not found — Folkshops" };
+  return { title: state.store.name, description: `Shop ${state.store.name}` };
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [store, cookieStore] = await Promise.all([loadStore(), cookies()]);
+  const [state, cookieStore] = await Promise.all([loadStore(), cookies()]);
 
-  if (!store) {
+  if (state.kind === "suspended") {
+    return (
+      <html lang="en">
+        <body className="min-h-screen">
+          <StoreSuspended />
+        </body>
+      </html>
+    );
+  }
+
+  if (state.kind !== "ok") {
     return (
       <html lang="en">
         <body className="min-h-screen">
@@ -44,6 +67,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     );
   }
 
+  const store = state.store;
   const signedIn = cookieStore.has("fk_customer_access_token");
 
   return (
@@ -71,6 +95,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <span>Powered by Folkshops</span>
           </div>
         </footer>
+
+        {/* Only for stores whose plan includes AI — display only; ai-service checks the plan on every message. */}
+        {store.aiAssistantEnabled && <ShoppingAssistant storeName={store.name} signedIn={signedIn} />}
       </body>
     </html>
   );

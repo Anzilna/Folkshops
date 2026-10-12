@@ -109,6 +109,10 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     // as bug #17 — every registered test tenant gets one of these rows
     // now (AuthService.register() always creates a subscription).
     await client.query(`DELETE FROM subscription_customer_lookup WHERE tenant_id = $1`, [tenantId]);
+    // platform_audit_log deliberately has no FK (an audit record outlives
+    // what it describes), so nothing blocks the tenant delete — but tests
+    // that suspend stores would leave rows behind in the dev database.
+    await client.query(`DELETE FROM platform_audit_log WHERE tenant_id = $1`, [tenantId]);
 
     await client.query("BEGIN");
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
@@ -134,6 +138,9 @@ export async function cleanupTestTenant(tenantId: string): Promise<void> {
     await client.query(`DELETE FROM order_items WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM orders WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM customers WHERE tenant_id = $1`, [tenantId]);
+    // inventory FKs products — missing until mcp.integration.spec.ts became
+    // the first suite to create a stock record. Same class of gap as bug #17.
+    await client.query(`DELETE FROM inventory WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM products WHERE tenant_id = $1`, [tenantId]);
     await client.query(`DELETE FROM memberships WHERE tenant_id = $1`, [tenantId]);
     await client.query("COMMIT");
@@ -176,6 +183,7 @@ export async function cleanupTestPlatformAdmin(id: string): Promise<void> {
   await client.connect();
   try {
     await client.query(`DELETE FROM refresh_tokens WHERE subject_id = $1`, [id]);
+    await client.query(`DELETE FROM platform_audit_log WHERE admin_id = $1 OR target_id = $1`, [id]);
     await client.query(`DELETE FROM platform_admins WHERE id = $1`, [id]);
   } finally {
     await client.end();

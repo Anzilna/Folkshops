@@ -5,10 +5,10 @@ import { plans, products, subscriptions } from "../database/schema";
 import { withTenantContext } from "../database/tenant-context";
 
 /**
- * The only limit actually enforced today — see docs/decisions/0012's
- * "What's enforced vs. tracked-only" section for why staff-seat and
- * AI-access limits are stored on `plans` but not checked anywhere yet (no
- * real caller exists for either).
+ * Product limit enforcement, plus the read-only AI flag the storefront
+ * uses to decide whether to show the shopping assistant. AI access is
+ * ENFORCED in apps/ai-service on every request (its own entitlement
+ * check); hasAiAssistant() here only decides whether a button appears.
  */
 @Injectable()
 export class PlanLimitsService {
@@ -46,5 +46,20 @@ export class PlanLimitsService {
         `Your plan allows up to ${maxProducts} products. Upgrade your plan to add more.`,
       );
     }
+  }
+
+  /** Same rule as ai-service's entitlement check: plan includes AI and the subscription is paid up (past_due = grace). */
+  async hasAiAssistant(tenantId: string): Promise<boolean> {
+    return this.dbRouter.read("strong", (db) =>
+      withTenantContext(db, tenantId, async (tx) => {
+        const [row] = await tx
+          .select({ aiAccess: plans.aiAccess, status: subscriptions.status })
+          .from(subscriptions)
+          .innerJoin(plans, eq(subscriptions.planId, plans.id))
+          .where(eq(subscriptions.tenantId, tenantId))
+          .limit(1);
+        return Boolean(row?.aiAccess) && (row?.status === "active" || row?.status === "past_due");
+      }),
+    );
   }
 }

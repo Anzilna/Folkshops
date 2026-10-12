@@ -20,7 +20,20 @@ class RagPipeline:
         self._rerank = rerank
         self._context_builder = context_builder
 
-    async def run(self, tenant_id: UUID, query: str, retrieval_limit: int = 10) -> RetrievedContext:
-        results = await self._retriever.retrieve(tenant_id, query, limit=retrieval_limit)
+    async def run(
+        self,
+        tenant_id: UUID,
+        query: str,
+        retrieval_limit: int = 10,
+        min_score: float | None = None,
+        include_platform: bool = False,
+    ) -> RetrievedContext:
+        results = await self._retriever.retrieve(
+            tenant_id, query, limit=retrieval_limit, include_platform=include_platform
+        )
+        # Applied before reranking: it's a floor on vector similarity, and a
+        # reranker's scores are on a different scale.
+        if min_score is not None:
+            results = [r for r in results if r.score >= min_score]
         results = await self._rerank.apply(query, results)
         return self._context_builder.build(results)

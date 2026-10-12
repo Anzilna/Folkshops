@@ -11,6 +11,7 @@ interface Plan {
   priceCents: number;
   currency: string;
   maxProducts: number | null;
+  aiAccess: boolean;
 }
 
 interface Subscription {
@@ -96,6 +97,8 @@ export default function BillingSettingsPage() {
 
         <p className="text-sm text-muted-foreground">
           {data.plan.maxProducts === null ? "Unlimited products" : `Up to ${data.plan.maxProducts} products`}
+          {" · "}
+          {data.plan.aiAccess ? "Store Copilot + knowledge base included" : "No AI features"}
         </p>
 
         {data.subscription.stripeCustomerId && (

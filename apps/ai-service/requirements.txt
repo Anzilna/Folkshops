@@ -4,7 +4,7 @@
 fastapi==0.115.6
 python-multipart==0.0.20
 uvicorn[standard]==0.34.0
-pydantic==2.10.4
+pydantic==2.13.5
 pydantic-settings==2.7.1
 
 # Postgres — SQLAlchemy 2.0 async ORM with asyncpg as the driver underneath
@@ -17,9 +17,21 @@ pgvector==0.3.6
 redis==5.2.1
 arq==0.26.3
 
-# Vendor SDK — imported ONLY inside infrastructure/llm/openai.py and
-# infrastructure/embeddings/openai.py, never in application/domain code.
+# Vendor SDKs — imported ONLY inside infrastructure/llm/{openai,gemini}.py
+# and infrastructure/embeddings/openai.py, never in application/domain code.
 openai==1.59.6
+google-genai==2.26.0
+
+# MCP client for the agent's commerce tools (core-api /internal/mcp/*) —
+# imported only in infrastructure/tools/mcp/client.py. Needs pydantic>=2.12,
+# hence the bump above; it must NOT pull starlette past what fastapi pins
+# (install with -r requirements.txt so the resolver sees both).
+mcp==2.2.0
+
+# The agent loop is a LangGraph StateGraph (application/agent/graph.py, ADR
+# 0018). LangGraph only — not LangChain's model/tool wrappers: our own
+# LLMProvider/ToolExecutor seams stay the boundary. Imported only in graph.py.
+langgraph==1.2.12
 
 # Kafka publisher (document.created/indexed/failed) — disabled by default,
 # see infrastructure/messaging/kafka.py and ADR 0011.
@@ -40,9 +52,11 @@ opentelemetry-exporter-otlp-proto-http==1.29.0
 opentelemetry-instrumentation-fastapi==0.50b0
 opentelemetry-instrumentation-asyncpg==0.50b0
 
-# sentence-transformers (reranker) is intentionally NOT listed here — it
-# pulls in torch and is only needed if RERANKER_ENABLED=true. Install with
-# `pip install -r requirements-reranker.txt` when that's actually turned on.
+# In-process embeddings (EMBEDDING_PROVIDER=local, the dev default) and the
+# optional reranker. Pulls in torch: the Dockerfile pre-installs the CPU-only
+# torch wheel first so Linux builds don't download CUDA. Imported lazily —
+# nothing loads torch unless the local provider or reranker is actually used.
+sentence-transformers==3.3.1
 
 pytest==8.3.4
 pytest-asyncio==0.25.0

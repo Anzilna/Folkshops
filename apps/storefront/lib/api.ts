@@ -72,7 +72,16 @@ function withStore(slug: string | null, init: RequestInit = {}): RequestInit {
  * credentials: "include" — same-origin now, so that's trivial. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const slug = resolveStoreSlug(typeof window !== "undefined" ? window.location.host : null);
-  return fetch(`/api${path}`, { ...withStore(slug, init), credentials: "include" });
+  const res = await fetch(`/api${path}`, { ...withStore(slug, init), credentials: "include" });
+
+  // The store was suspended while this shopper had it open. A reload makes
+  // the root layout render the "temporarily unavailable" page (which has no
+  // client calls of its own, so this can't loop).
+  if (res.status === 403 && typeof window !== "undefined") {
+    const body = await res.clone().json().catch(() => null);
+    if (body?.code === "store_suspended") window.location.reload();
+  }
+  return res;
 }
 
 /**

@@ -32,6 +32,14 @@ export class PlatformAdminAuthService {
     if (!admin || !(await bcrypt.compare(input.password, admin.passwordHash))) {
       throw new UnauthorizedException("Invalid credentials");
     }
+    await this.admins.recordLogin(admin.id);
+    return this.issueTokens(admin.id, admin.email);
+  }
+
+  /** A fresh session for an already-authenticated admin — after a password change has signed every session out, this browser gets a new one. */
+  async issueSession(adminId: string): Promise<TokenPair> {
+    const admin = await this.admins.findById(adminId);
+    if (!admin) throw new UnauthorizedException("This account no longer exists");
     return this.issueTokens(admin.id, admin.email);
   }
 

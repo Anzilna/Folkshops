@@ -7,5 +7,7 @@ import { InventoryService } from "./inventory.service";
   imports: [AuthModule],
   controllers: [InventoryController],
   providers: [InventoryService],
+  // Exported for the MCP tools (src/mcp/) — same service, not a second copy.
+  exports: [InventoryService],
 })
 export class InventoryModule {}

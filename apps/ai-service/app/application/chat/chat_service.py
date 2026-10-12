@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from app.application.documents.ingest import DocumentService
 from app.application.rag.pipeline import RagPipeline
 from app.domain.interfaces.llm import LLMMessage, LLMProvider, LLMRequest
 from app.domain.models.chat import ChatResponse, Role
@@ -30,8 +31,17 @@ _SYSTEM_PROMPT_TEMPLATE = (
 
 
 class ChatService:
-    def __init__(self, db: Db, rag_pipeline: RagPipeline, llm: LLMProvider, chat_model: str, metrics: Metrics):
+    def __init__(
+        self,
+        db: Db,
+        rag_pipeline: RagPipeline,
+        llm: LLMProvider,
+        chat_model: str,
+        metrics: Metrics,
+        documents: DocumentService,
+    ):
         self._db = db
+        self._documents = documents
         self._rag_pipeline = rag_pipeline
         self._llm = llm
         self._chat_model = chat_model
@@ -89,4 +99,6 @@ class ChatService:
         # Citations must correspond to chunks actually retrieved — never
         # invented (spec section 19). They come straight from
         # ContextBuilder's output, not parsed out of the model's answer.
-        return ChatResponse(conversation_id=conversation_id, answer=response.content, citations=context.citations)
+        filenames = await self._documents.filenames(tenant_id, list({c.document_id for c in context.citations}))
+        citations = [c.model_copy(update={"filename": filenames.get(c.document_id)}) for c in context.citations]
+        return ChatResponse(conversation_id=conversation_id, answer=response.content, citations=citations)

@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.domain.models.retrieval import Citation
 
@@ -31,9 +31,14 @@ class Conversation(BaseModel):
     updated_at: datetime
 
 
+MAX_CHAT_MESSAGE_CHARS = 4000
+
+
 class ChatRequest(BaseModel):
     conversation_id: UUID | None = None
-    message: str
+    # Bounded so one request can't push an arbitrarily large prompt (and
+    # bill) at the LLM. Over the limit is a 422 from FastAPI's validation.
+    message: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
 
 
 class ChatResponse(BaseModel):

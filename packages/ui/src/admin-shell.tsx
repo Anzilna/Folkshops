@@ -2,7 +2,7 @@
 
 import type { ComponentType, ReactNode } from "react";
 import { BreadcrumbProvider, Breadcrumbs, useBreadcrumbContext } from "./breadcrumbs";
-import { ChatWidget } from "./chat-widget";
+import { ChatWidget, type ChatWidgetProps } from "./chat-widget";
 import { NotificationBell, type NotificationItem } from "./notifications";
 
 export interface NavItem {
@@ -37,8 +37,10 @@ export interface AdminShellProps {
    * state server-side when provided. */
   onMarkNotificationRead?: (id: string) => void;
   onMarkAllNotificationsRead?: () => void;
-  /** Mounts the floating chat preview (see chat-widget.tsx). */
+  /** Mounts the floating chat (see chat-widget.tsx). */
   assistantName?: string;
+  /** Wires the chat to a real backend (onSend) or locks it — omitted = canned preview. */
+  assistant?: Omit<ChatWidgetProps, "assistantName">;
   children: ReactNode;
 }
 
@@ -85,6 +87,7 @@ function AdminShellInner({
   onMarkNotificationRead,
   onMarkAllNotificationsRead,
   assistantName,
+  assistant,
   children,
 }: AdminShellProps) {
   const activeItem =
@@ -178,7 +181,7 @@ function AdminShellInner({
         </main>
       </div>
 
-      {assistantName && <ChatWidget assistantName={assistantName} />}
+      {assistantName && <ChatWidget assistantName={assistantName} {...assistant} />}
     </div>
   );
 }

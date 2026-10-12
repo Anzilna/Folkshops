@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from enum import Enum
 from typing import Protocol
 
 from pydantic import BaseModel
@@ -6,9 +7,28 @@ from pydantic import BaseModel
 from app.domain.models.chat import Role
 
 
+class ToolCall(BaseModel):
+    """A tool call the model PROPOSED. Nothing executes it until the agent's
+    executor has validated the arguments and the policy engine has allowed it."""
+
+    id: str
+    name: str
+    arguments: dict
+
+
 class LLMMessage(BaseModel):
     role: Role
-    content: str
+    content: str = ""
+    # role=assistant: the calls the model made in this turn.
+    tool_calls: list[ToolCall] = []
+    # role=tool: which call this is the result of (some vendors match on id,
+    # Gemini on name, so both are carried).
+    tool_call_id: str | None = None
+    tool_name: str | None = None
+    # Opaque, adapter-owned state a vendor needs echoed back verbatim on the
+    # next request (Gemini's thought signatures). Only the adapter that
+    # produced it ever reads it; the agent just carries it along.
+    provider_state: dict | None = None
 
 
 class ToolDefinition(BaseModel):
@@ -28,16 +48,25 @@ class LLMRequest(BaseModel):
     tools: list[ToolDefinition] = []
 
 
-class ToolCall(BaseModel):
-    name: str
-    arguments: dict
+class StopReason(str, Enum):
+    STOP = "stop"
+    TOOL_CALLS = "tool_calls"
+    MAX_TOKENS = "max_tokens"
+    # The vendor's own safety filter blocked the prompt or the answer.
+    SAFETY = "safety"
+    OTHER = "other"
 
 
 class LLMResponse(BaseModel):
     content: str
     tool_calls: list[ToolCall] = []
     prompt_tokens: int = 0
+    # Includes any "thinking" tokens — vendors bill those as output.
     completion_tokens: int = 0
+    cached_tokens: int = 0
+    model: str | None = None
+    stop_reason: StopReason = StopReason.STOP
+    provider_state: dict | None = None
 
 
 class LLMStreamEvent(BaseModel):

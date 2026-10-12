@@ -6,6 +6,10 @@ export interface TenantContext {
   id: string;
   slug: string;
   name: string;
+  // Resolved even when suspended — StoreAvailableGuard needs to see it to
+  // refuse the request with a specific reason, rather than every route
+  // seeing "no store" and answering with a confusing 400.
+  status: "active" | "suspended";
 }
 
 declare module "express-serve-static-core" {
@@ -51,7 +55,7 @@ export class TenantResolverMiddleware implements NestMiddleware {
     if (slug) {
       const tenant = await this.tenants.findBySlug(slug);
       if (tenant) {
-        req.tenantContext = { id: tenant.id, slug: tenant.slug, name: tenant.name };
+        req.tenantContext = { id: tenant.id, slug: tenant.slug, name: tenant.name, status: tenant.status };
       }
     }
 

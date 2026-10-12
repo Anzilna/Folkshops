@@ -43,7 +43,7 @@ arq app.workers.document_worker.WorkerSettings   # separate terminal — require
 
 **Postgres needs `pgvector`**: the shared `docker-compose.yml` at the repo root already runs `pgvector/pgvector:pg16` (swapped from plain `postgres:16-alpine`, see ADR 0011) — if you're pointed at a different Postgres, it needs the `vector` extension installed before migrations will succeed.
 
-No OpenAI key required for local dev — `LLM_PROVIDER=fake`/`EMBEDDING_PROVIDER=fake` (the `.env.example` default) run the full pipeline deterministically with no network calls. Set both to `openai` and provide `OPENAI_API_KEY` to use the real thing.
+No OpenAI key required for local dev. `EMBEDDING_PROVIDER=local` (the `.env.example` default) runs `BAAI/bge-small-en-v1.5` in-process for real semantic search; the ~130MB model downloads on first start. `LLM_PROVIDER=fake` is still a deterministic stand-in for the chat model. `EMBEDDING_PROVIDER=fake` (hash-based, no download) also works. The schema is `vector(384)` (migrations/0003); OpenAI's 1536-wide embeddings need a migration. After switching embedding models, re-embed stored chunks with `scripts/reembed_all.py` (see its docstring).
 
 ## Running the tests
 
@@ -52,11 +52,19 @@ python -m pytest tests/unit -q                       # no external dependencies
 python -m pytest tests/integration tests/evaluation -q   # needs `docker compose up -d postgres redis` + the role/migrations above
 ```
 
-## Endpoints (Phase 1)
+## Endpoints
+
+Every route except `/health` and `/entitlement` requires a **staff** token **and** a plan that includes AI (`plans.ai_access` with subscription `active`/`past_due`). It returns 403 for customers and 402 `{detail: {code, message}}` for a plan without AI. See ADR 0011's plan-gating addendum.
 
 - `GET /health` — Postgres/Redis/vector-store health
-- `POST /documents` — multipart upload (staff or customer auth), returns 202 immediately; ingestion runs in `arq` worker
-- `GET /documents/{id}` / `GET /documents` — status + listing, tenant-scoped
-- `POST /chat` — RAG-only chat (no tool-calling yet), returns `{conversation_id, answer, citations}`
+- `GET /entitlement` — staff only, not plan-gated: `{allowed, reason, plan_slug, plan_name, subscription_status}`, used by merchant-admin to pick between the UI and an upgrade prompt
+- `POST /documents` — multipart upload, returns 202 immediately; ingestion runs in the `arq` worker (`ai-worker` in docker-compose)
+- `GET /documents` — paginated `{data,total,page,limit,totalPages}`, `?page&limit&search&status&sortBy&sortDir`
+- `GET /documents/{id}` / `DELETE /documents/{id}` — status / hard delete (chunks cascade), tenant-scoped
+- `POST /chat` — RAG-only chat (no tools), returns `{conversation_id, answer, citations[{document_id, chunk_id, score, filename}]}`. Superseded in the UI by `/agent/chat`.
+- `POST /agent/chat` — the tool-calling agent: staff token → Store Copilot, customer token → Shopper Assistant (the store's plan must include AI either way). Body `{message, conversation_id?, client_message_id?}`; returns `{conversation_id, run_id, answer, status, citations, actions, activity}`.
+- `POST /agent/actions/{id}/confirm` / `.../cancel` — run or discard a change the copilot proposed, exactly as shown on its card.
 
-Auth: verifies the same `fk_access_token`/`fk_customer_access_token` cookies core-api issues (shared `JWT_SECRET`/`CUSTOMER_JWT_SECRET`) — this service never issues its own tokens. Not yet wired into any frontend; test with a manually-minted JWT (see the ADR's live-verification notes) until merchant-admin/storefront call it.
+The agent's commerce tools come from core-api's MCP endpoints (`CORE_API_URL` + `INTERNAL_SERVICE_TOKEN`). Without them it still runs with `knowledge_search`. Real model: `LLM_PROVIDER=gemini` + `GEMINI_API_KEY`. See `docs/decisions/0015-agent-and-mcp.md`.
+
+Auth: verifies the same `fk_access_token` cookie core-api issues (shared `JWT_SECRET`); this service never issues its own tokens. merchant-admin calls it directly cross-origin (`NEXT_PUBLIC_AI_URL`) from `/knowledge` and the Store Copilot chat.

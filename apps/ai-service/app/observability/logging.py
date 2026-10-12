@@ -50,3 +50,9 @@ def clear_request_context() -> None:
 
 def get_logger(name: str):
     return structlog.get_logger(name)
+
+
+def bind_actor_context(actor):
+    """Adds the verified tenant/actor to every log line for the rest of the request. Returns the actor unchanged."""
+    structlog.contextvars.bind_contextvars(tenant_id=actor.tenant_id, actor_id=actor.actor_id)
+    return actor

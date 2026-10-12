@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchAiEntitlement, type AiEntitlement } from "./ai-api";
 import { apiFetch, getStoredTenantSlug } from "./api";
 
 /** The dev-only tenant slug, read from document.cookie once mounted. */
@@ -52,4 +53,24 @@ export async function errorMessage(res: Response, fallback: string): Promise<str
   const body = await res.json().catch(() => null);
   if (Array.isArray(body?.message)) return body.message.join(", ");
   return body?.message ?? fallback;
+}
+
+/**
+ * Whether this store's plan includes the Store Copilot + knowledge base
+ * (ai-service's GET /entitlement). `null` while loading; an ai-service
+ * outage resolves to `{ unavailable: true }` rather than looking like a
+ * plan problem.
+ */
+export function useAiEntitlement() {
+  const [entitlement, setEntitlement] = useState<AiEntitlement | { unavailable: true } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAiEntitlement()
+      .then((e) => !cancelled && setEntitlement(e))
+      .catch(() => !cancelled && setEntitlement({ unavailable: true }));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return entitlement;
 }

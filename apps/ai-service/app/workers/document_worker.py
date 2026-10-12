@@ -15,6 +15,7 @@ content — see embedding_worker.py) are independently retryable jobs with
 different inputs and different failure modes.
 """
 
+import asyncio
 import logging
 
 from arq.connections import RedisSettings
@@ -23,7 +24,7 @@ from app.application.documents.chunk import RecursiveTextChunker
 from app.application.documents.index import DocumentIndexer
 from app.application.documents.ingest import DocumentService, IngestionPipeline
 from app.config import get_settings
-from app.infrastructure.embeddings.router import build_embedding_provider
+from app.infrastructure.embeddings.router import build_embedding_provider, warm_up_embeddings
 from app.infrastructure.messaging.kafka import KafkaEventPublisher, NullEventPublisher
 from app.infrastructure.persistence.postgres import Db
 from app.infrastructure.vector_store.router import build_vector_store
@@ -39,6 +40,8 @@ async def startup(ctx: dict) -> None:
 
     db = await Db.connect(settings.database_url)
     embeddings = build_embedding_provider(settings)
+    # Background, not awaited — same reasoning as main.py's lifespan.
+    ctx["embeddings_warm_up"] = asyncio.create_task(warm_up_embeddings(embeddings))
     vector_store = build_vector_store(settings, db)
     events = KafkaEventPublisher(settings.kafka_brokers) if settings.kafka_events_enabled else NullEventPublisher()
 

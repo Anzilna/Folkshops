@@ -7,5 +7,7 @@ import { CustomersService } from "./customers.service";
   imports: [AuthModule],
   controllers: [CustomersController],
   providers: [CustomersService],
+  // Exported for the MCP tools (src/mcp/) — same service, not a second copy.
+  exports: [CustomersService],
 })
 export class CustomersModule {}

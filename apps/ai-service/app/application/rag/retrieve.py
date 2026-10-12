@@ -58,6 +58,7 @@ class Retriever:
         query: str,
         limit: int = 10,
         metadata_filter: dict | None = None,
+        include_platform: bool = False,
     ) -> list[RetrievalResult]:
         normalized = self._normalize(query)
         if not normalized:
@@ -66,7 +67,9 @@ class Retriever:
         query_embedding = await self._embed_query_cached(tenant_id, normalized)
 
         start = time.monotonic()
-        results = await self._vector_store.search(tenant_id, query_embedding, limit, metadata_filter)
+        results = await self._vector_store.search(
+            tenant_id, query_embedding, limit, metadata_filter, include_platform
+        )
         self._metrics.vector_search_latency.record((time.monotonic() - start) * 1000)
 
         self._metrics.retrieval_count.record(len(results))

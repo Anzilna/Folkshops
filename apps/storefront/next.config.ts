@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+// apps/ai-service — the shopping assistant. Server-side only: the browser
+// never talks to it directly, for exactly the cookie reason below.
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? "http://localhost:4400";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@folkshops/ui"],
@@ -33,7 +36,14 @@ const nextConfig: NextConfig = {
   // also removes a genuine cross-origin request/response hop in
   // production, once a real API domain exists there too.
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${API_URL}/:path*` }];
+    // "/ai/...": the same reasoning for the shopping assistant
+    // (shopping-assistant.tsx) — ai-service verifies the same customer
+    // cookie, which only reaches it through this same-origin hop. ADR 0011
+    // called this out before the storefront had an assistant.
+    return [
+      { source: "/api/:path*", destination: `${API_URL}/:path*` },
+      { source: "/ai/:path*", destination: `${AI_SERVICE_URL}/:path*` },
+    ];
   },
 };
 

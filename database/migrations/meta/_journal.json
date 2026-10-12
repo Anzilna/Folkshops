@@ -225,6 +225,13 @@
       "when": 1790786718245,
       "tag": "0031_customer-whatsapp-opt-in",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790926238836,
+      "tag": "0032_platform-admin-suspension-audit",
+      "breakpoints": true
     }
   ]
 }

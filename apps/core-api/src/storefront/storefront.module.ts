@@ -9,6 +9,7 @@ import { CustomerAuthService } from "./customer-auth.service";
 import { CustomerJwtAuthGuard } from "./guards/customer-jwt-auth.guard";
 import { CustomerTenantMatchGuard } from "./guards/customer-tenant-match.guard";
 import { OTP_PROVIDER } from "./otp-provider";
+import { SubscriptionsCoreModule } from "../subscriptions/subscriptions-core.module";
 import { StoreController } from "./store.controller";
 
 // A distinct secret from both staff and platform_admin — see
@@ -28,7 +29,7 @@ const jwtModule = JwtModule.registerAsync({
   // PaymentsCoreModule: StoreController needs PaymentAccountsService for
   // the public paymentsEnabled flag — safe to import here (not exported
   // further) since it never touches Jwt/Auth, no bug #7 collision risk.
-  imports: [jwtModule, TokensModule, PaymentsCoreModule],
+  imports: [jwtModule, TokensModule, PaymentsCoreModule, SubscriptionsCoreModule],
   controllers: [CustomerAuthController, StoreController],
   providers: [
     CustomerAuthService,

@@ -9,6 +9,8 @@ import { CustomersModule } from "./customers/customers.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { InventoryModule } from "./inventory/inventory.module";
+import { CustomerMcpModule } from "./mcp/customer-mcp.module";
+import { StaffMcpModule } from "./mcp/staff-mcp.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { OrdersModule } from "./orders/orders.module";
 import { StorefrontOrdersModule } from "./orders/storefront-orders.module";
@@ -74,6 +76,9 @@ import { UsersModule } from "./users/users.module";
     NotificationsModule,
     SubscriptionsModule,
     SubscriptionsWebhookModule,
+    // ai-service's tool endpoints (/internal/mcp/*) — see src/mcp/.
+    StaffMcpModule,
+    CustomerMcpModule,
   ],
 })
 export class AppModule implements NestModule {

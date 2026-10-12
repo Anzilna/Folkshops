@@ -15,16 +15,31 @@ export async function fetchDashboardSummary(): Promise<PlatformDashboardSummary>
 }
 
 /**
- * Same EventSource pattern as merchant-admin's analytics dashboard
- * (lib/analytics-api.ts's subscribeRealtime) — a thin "something changed"
- * signal over SSE, the dashboard re-fetches the real summary on receiving
- * one. withCredentials:true is EventSource's own equivalent of
- * credentials:"include", subject to the same CORS rules
- * (main.ts's enableCors({credentials:true}) with an explicit, non-wildcard
- * origin).
+ * One shared EventSource for the whole app, ref-counted across subscribers.
+ * The dashboard page and the notification bell both want the same "something
+ * changed" signal; two open connections for one browser tab would be
+ * wasteful (and each one is a server-side Redis subscriber). The first
+ * subscriber opens it, the last one out closes it.
+ *
+ * Same signal-only design as merchant-admin's analytics stream: it carries
+ * no data, subscribers re-fetch the real thing on receiving it.
+ * withCredentials:true is EventSource's equivalent of credentials:"include"
+ * (core-api's enableCors({credentials:true}) with an explicit origin).
  */
+const listeners = new Set<() => void>();
+let source: EventSource | null = null;
+
 export function subscribeDashboardRealtime(onEvent: () => void): () => void {
-  const source = new EventSource(`${API_URL}/platform-admin/dashboard/stream`, { withCredentials: true });
-  source.onmessage = () => onEvent();
-  return () => source.close();
+  listeners.add(onEvent);
+  if (!source) {
+    source = new EventSource(`${API_URL}/platform-admin/dashboard/stream`, { withCredentials: true });
+    source.onmessage = () => listeners.forEach((fn) => fn());
+  }
+  return () => {
+    listeners.delete(onEvent);
+    if (listeners.size === 0 && source) {
+      source.close();
+      source = null;
+    }
+  };
 }

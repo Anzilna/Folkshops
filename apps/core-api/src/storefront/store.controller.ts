@@ -1,6 +1,7 @@
 import { BadRequestException, Controller, Get } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentAccountsService } from "../payments/payment-accounts.service";
+import { PlanLimitsService } from "../subscriptions/plan-limits.service";
 import { CacheService } from "../redis/cache.service";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
@@ -32,6 +33,7 @@ export class StoreController {
 
   constructor(
     private readonly paymentAccounts: PaymentAccountsService,
+    private readonly planLimits: PlanLimitsService,
     private readonly cache: CacheService,
     config: ConfigService,
   ) {
@@ -42,8 +44,15 @@ export class StoreController {
   async get(@CurrentTenant() tenant?: TenantContext) {
     if (!tenant) throw new BadRequestException("No store resolved for this request");
     return this.cache.getOrSet(storeCacheKey(tenant.id), this.ttlSeconds, async () => {
-      const paymentsEnabled = await this.paymentAccounts.isPaymentsEnabled(tenant.id);
-      return { name: tenant.name, slug: tenant.slug, paymentsEnabled };
+      const [paymentsEnabled, aiAssistantEnabled] = await Promise.all([
+        this.paymentAccounts.isPaymentsEnabled(tenant.id),
+        // UI-only, like paymentsEnabled: shows or hides the shopping
+        // assistant. Cached with the rest of this payload, so a plan change
+        // can take up to CACHE_STORE_TTL_SECONDS to show here; ai-service
+        // checks the plan itself on every request regardless.
+        this.planLimits.hasAiAssistant(tenant.id),
+      ]);
+      return { name: tenant.name, slug: tenant.slug, paymentsEnabled, aiAssistantEnabled };
     });
   }
 }

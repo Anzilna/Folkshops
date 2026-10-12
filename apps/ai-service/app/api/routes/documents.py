@@ -7,18 +7,22 @@ documented Phase 1 simplification for the sizes MAX_UPLOAD_BYTES allows; see
 docs/decisions/0011.
 """
 
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
 
-from app.api.dependencies import get_current_actor, get_document_service
+from app.api.dependencies import get_document_service, require_ai_access
 from app.application.documents.ingest import DocumentService
 from app.application.documents.parse import SUPPORTED_MIME_TYPES
 from app.config import Settings, get_settings
 from app.domain.errors import DocumentNotFound
 from app.domain.interfaces.tool_provider import ActorContext
-from app.domain.models.document import Document
+from app.domain.models.document import Document, DocumentPage, DocumentStatus
 
+# Every route: staff only, and only for a plan that includes AI (see
+# require_ai_access). A store that downgrades keeps its documents but can't
+# reach them until it upgrades again.
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
@@ -26,7 +30,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 async def upload_document(
     request: Request,
     file: UploadFile,
-    actor: ActorContext = Depends(get_current_actor),
+    actor: ActorContext = Depends(require_ai_access),
     documents: DocumentService = Depends(get_document_service),
     settings: Settings = Depends(get_settings),
 ) -> Document:
@@ -54,7 +58,7 @@ async def upload_document(
 @router.get("/{document_id}", response_model=Document)
 async def get_document(
     document_id: UUID,
-    actor: ActorContext = Depends(get_current_actor),
+    actor: ActorContext = Depends(require_ai_access),
     documents: DocumentService = Depends(get_document_service),
 ) -> Document:
     try:
@@ -63,9 +67,36 @@ async def get_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.get("", response_model=list[Document])
+@router.get("", response_model=DocumentPage)
 async def list_documents(
-    actor: ActorContext = Depends(get_current_actor),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None, max_length=200),
+    status_filter: DocumentStatus | None = Query(None, alias="status"),
+    sort_by: Literal["createdAt", "filename", "status"] = Query("createdAt", alias="sortBy"),
+    sort_dir: Literal["asc", "desc"] = Query("desc", alias="sortDir"),
+    actor: ActorContext = Depends(require_ai_access),
     documents: DocumentService = Depends(get_document_service),
-) -> list[Document]:
-    return await documents.list_for_tenant(UUID(actor.tenant_id))
+) -> DocumentPage:
+    return await documents.list_for_tenant(
+        UUID(actor.tenant_id),
+        page=page,
+        limit=limit,
+        search=search or None,
+        status=status_filter,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: UUID,
+    actor: ActorContext = Depends(require_ai_access),
+    documents: DocumentService = Depends(get_document_service),
+) -> Response:
+    try:
+        await documents.delete(UUID(actor.tenant_id), document_id)
+    except DocumentNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

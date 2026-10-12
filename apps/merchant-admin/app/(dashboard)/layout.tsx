@@ -30,6 +30,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   });
 
   if (!res.ok) {
+    // A suspended store can't use /login (it would bounce straight back to
+    // "/" while the session cookie exists, and "/" back to /login — a
+    // loop), so it gets its own page that explains and offers sign-out.
+    if (res.status === 403) {
+      const body = await res.json().catch(() => null);
+      if (body?.code === "store_suspended") redirect("/suspended");
+    }
     redirect("/login");
   }
 

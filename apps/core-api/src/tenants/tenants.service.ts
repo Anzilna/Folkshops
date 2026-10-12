@@ -49,6 +49,19 @@ export class TenantsService {
   }
 
   /**
+   * The /internal/mcp/* counterpart of findBySlug: those requests come from
+   * ai-service, not a browser on a store's subdomain, so there's no Host to
+   * resolve — the tenant comes from the already-verified JWT's tenantId
+   * instead (McpActorGuard). Same "strong" read, same reasoning.
+   */
+  async findById(id: string) {
+    return this.dbRouter.read("strong", async (db) => {
+      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
+      return tenant ?? null;
+    });
+  }
+
+  /**
    * Platform-admin only (see PlatformAdminTenantsController) — the global
    * tenant registry, not scoped to any one tenant. `tenants` itself has no
    * RLS (it's the registry RLS policies key off of), so this is a plain

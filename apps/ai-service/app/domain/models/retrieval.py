@@ -19,6 +19,9 @@ class Citation(BaseModel):
     document_id: UUID
     chunk_id: UUID
     score: float
+    # Filled in by ChatService after retrieval, for display ("Sources:
+    # returns-policy.pdf") — None only if the document was deleted mid-request.
+    filename: str | None = None
 
 
 class RetrievedContext(BaseModel):
@@ -26,4 +29,8 @@ class RetrievedContext(BaseModel):
 
     text: str
     citations: list[Citation]
+    # The selected chunks' text, one per citation (same order) — for callers
+    # that hand passages over individually (the agent's knowledge_search)
+    # rather than as one joined block.
+    passages: list[str] = []
     truncated: bool

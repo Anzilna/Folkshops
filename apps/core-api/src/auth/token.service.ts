@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { DbRouter } from "../database/db-router";
 import { authSubjectTypeEnum, refreshTokens } from "../database/schema";
+import type { Db } from "../database/tokens";
 
 export type AuthSubjectType = (typeof authSubjectTypeEnum.enumValues)[number];
 
@@ -70,6 +71,19 @@ export class TokenService {
         return { subjectId: row.subjectId, tenantId: row.tenantId };
       }),
     );
+  }
+
+  /** Signs a subject out everywhere: every live refresh token for them. Used on password change and when an account is removed. */
+  async revokeAllForSubject(subjectType: AuthSubjectType, subjectId: string): Promise<void> {
+    await this.dbRouter.write((db) => this.revokeAllForSubjectIn(db, subjectType, subjectId));
+  }
+
+  /** Same, inside a caller's transaction so it commits or rolls back together with the change that caused it. */
+  async revokeAllForSubjectIn(db: Db, subjectType: AuthSubjectType, subjectId: string): Promise<void> {
+    await db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(refreshTokens.subjectType, subjectType), eq(refreshTokens.subjectId, subjectId), isNull(refreshTokens.revokedAt)));
   }
 
   /** Logout — revoke this one session's refresh token. Not an error if it's already gone/expired/invalid. */

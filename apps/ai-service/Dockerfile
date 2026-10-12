@@ -12,6 +12,11 @@ WORKDIR /app
 # hyper-optimized production layer yet.
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev curl && rm -rf /var/lib/apt/lists/*
 
+# CPU-only torch before requirements.txt, so sentence-transformers finds it
+# already satisfied. PyPI's default Linux x86 torch wheel bundles CUDA
+# (several GB); this service only ever runs inference on CPU.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.14.1
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -46,3 +46,11 @@ export function createExportFetcher(path: string) {
     return res.blob();
   };
 }
+
+/** Extracts the message from a core-api error body (class-validator
+ * returns an array of messages, everything else a string). */
+export async function errorMessage(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => null);
+  if (Array.isArray(body?.message)) return body.message.join(", ");
+  return body?.message ?? fallback;
+}

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
@@ -9,6 +9,7 @@ import { withTenantContext } from "../database/tenant-context";
 import { membershipLookup, memberships, outboxEvents, subscriptionCustomerLookup, subscriptions, tenants, users } from "../database/schema";
 import { publishDashboardUpdate } from "../platform-admin/dashboard/platform-admin-realtime";
 import { REDIS_CLIENT } from "../redis/tokens";
+import { STORE_SUSPENDED_CODE } from "../tenancy/store-available.guard";
 import { BILLING_GATEWAY, BillingProvider } from "../subscriptions/billing-provider.interface";
 import { PlansService } from "../subscriptions/plans.service";
 import { TenantsService } from "../tenants/tenants.service";
@@ -205,12 +206,30 @@ export class AuthService {
     );
   }
 
+  /**
+   * StoreAvailableGuard already refuses a suspended store at the door;
+   * login/refresh re-check on their own so a token is never ISSUED for a
+   * suspended store even if this service is ever called from somewhere that
+   * guard doesn't cover. Layered, same as everything else tenancy-related.
+   */
+  private async assertStoreNotSuspended(tenantId: string): Promise<void> {
+    const tenant = await this.tenantsService.findById(tenantId);
+    if (tenant?.status === "suspended") {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: STORE_SUSPENDED_CODE,
+        message: "This store is currently suspended. Please contact Folkshops support.",
+      });
+    }
+  }
+
   /** Logs a user into the store resolved from the request (hostname/dev header) — never a store named in the request body. */
   async login(input: { email: string; password: string; tenantId: string }) {
     const user = await this.usersService.findByEmail(input.email);
     if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
       throw new UnauthorizedException("Invalid credentials");
     }
+    await this.assertStoreNotSuspended(input.tenantId);
 
     // Membership is tenant-owned data and gates auth — always strong, never
     // "eventual". withTenantContext still does the RLS work; DbRouter only
@@ -253,6 +272,7 @@ export class AuthService {
 
     const user = await this.usersService.findById(consumed.subjectId);
     if (!user) throw new UnauthorizedException(invalidMsg);
+    await this.assertStoreNotSuspended(consumed.tenantId);
 
     const membership = await this.dbRouter.read("strong", (db) =>
       withTenantContext(db, consumed.tenantId!, async (tx) => {

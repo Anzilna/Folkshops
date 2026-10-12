@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies import get_chat_service, get_current_actor, get_rate_limiter
+from app.api.dependencies import get_chat_service, get_rate_limiter, require_ai_access
 from app.application.chat.chat_service import ChatService
 from app.domain.interfaces.tool_provider import ActorContext
 from app.domain.models.chat import ChatRequest, ChatResponse
@@ -17,7 +17,7 @@ _CHAT_RATE_WINDOW_SECONDS = 60
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
-    actor: ActorContext = Depends(get_current_actor),
+    actor: ActorContext = Depends(require_ai_access),
     chat_service: ChatService = Depends(get_chat_service),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> ChatResponse:

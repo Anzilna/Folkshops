@@ -21,3 +21,4 @@ export * from "./notifications";
 export * from "./plans";
 export * from "./subscriptions";
 export * from "./password-reset-tokens";
+export * from "./platform-audit-log";

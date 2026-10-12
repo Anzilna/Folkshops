@@ -8,6 +8,7 @@ import {
   setAuthCookies,
 } from "../auth/auth-cookies";
 import { CurrentTenant } from "../tenancy/current-tenant.decorator";
+import { AllowSuspendedStore } from "../tenancy/store-available.guard";
 import type { TenantContext } from "../tenancy/tenant-resolver.middleware";
 import { CurrentCustomer } from "./decorators/current-customer.decorator";
 import { CustomerAuthService, CustomerJwtPayload } from "./customer-auth.service";
@@ -60,6 +61,7 @@ export class CustomerAuthController {
     return { ok: true };
   }
 
+  @AllowSuspendedStore()
   @Post("logout")
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const raw = req.cookies?.[CUSTOMER_REFRESH_TOKEN_COOKIE];

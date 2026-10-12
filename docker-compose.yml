@@ -278,6 +278,7 @@ services:
       JWT_SECRET: dev-only-change-me
       PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
       CUSTOMER_JWT_SECRET: dev-only-change-me-three
+      INTERNAL_SERVICE_TOKEN: dev-only-internal-service-token
       CORS_ORIGINS: http://localhost:3000,http://*.localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003
       # AWS_S3_ENDPOINT is what makes this MinIO instead of real AWS — see
       # S3Service's own comment. AWS_S3_PUBLIC_URL is what browsers use
@@ -376,10 +377,45 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev-only-change-me
       CUSTOMER_JWT_SECRET: dev-only-change-me-three
-      CORS_ORIGINS: http://localhost:3001
+      PLATFORM_ADMIN_JWT_SECRET: dev-only-change-me-too
+      CORS_ORIGINS: http://localhost:3001,http://localhost:3002
       KAFKA_BROKERS: kafka:9094
+      HF_HOME: /models
+      # The agent's MCP tools (core-api /internal/mcp/*), over the compose network.
+      CORE_API_URL: http://core-api:4000
+      INTERNAL_SERVICE_TOKEN: dev-only-internal-service-token
     ports:
       - "4400:4400"
+    # Local embedding model cache (EMBEDDING_PROVIDER=local) — shared with
+    # ai-worker and kept across rebuilds, so the model downloads once.
+    volumes:
+      - ai-model-cache:/models
+
+  # The arq ingestion worker — same image, different command. Without it an
+  # uploaded knowledge-base document never leaves "uploaded" (parse/chunk/
+  # embed only ever run here, never in the API request).
+  ai-worker:
+    build:
+      context: apps/ai-service
+      dockerfile: Dockerfile
+    container_name: folkshops-ai-worker
+    restart: unless-stopped
+    command: ["arq", "app.workers.document_worker.WorkerSettings"]
+    healthcheck:
+      disable: true
+    depends_on:
+      ai-service:
+        condition: service_healthy
+    env_file:
+      - apps/ai-service/.env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgres://folkshops_ai:folkshops_ai@postgres:5432/folkshops_dev
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9094
+      HF_HOME: /models
+    volumes:
+      - ai-model-cache:/models
 
 volumes:
   folkshops-postgres-data:
@@ -391,3 +427,4 @@ volumes:
   core-api-app-node-modules:
   analytics-app-node-modules:
   analytics-events-node-modules:
+  ai-model-cache:

@@ -28,8 +28,8 @@ Restructured in migration `0029` at the user's request: no free tier shown publi
 |---|---|---|---|
 | Free | 0 | 20 | no — **hidden** (`isActive: false`), see below |
 | Basic | 149 | 50 | no |
-| Standard | 399 | 500 | yes (not enforced yet) |
-| Advanced | 1,499 | unlimited | yes (not enforced yet) |
+| Standard | 399 | 500 | yes |
+| Advanced | 1,499 | unlimited | yes |
 
 **`free` is hidden, not deleted.** `PlansService.listActive()` (backing `GET /plans` — the pricing page, the register form's plan lookup, and the billing settings "change plan" list) filters `WHERE is_active = true`, so it never appears publicly. `PlansService.findBySlug()` has no such filter, so it's still resolvable — `AuthService.register()` defaults every registration without an explicit `planSlug` to `"free"`, and so does every existing integration test and `db:seed-demo`. Deleting the row outright would require deciding a new no-plan-specified default and touching all of those call sites; hiding it was the deliberately smaller change. Revisit this if the product decision becomes "registration must always require picking a paid plan."
 
@@ -41,7 +41,7 @@ Restructured in migration `0029` at the user's request: no free tier shown publi
 
 **Tracked but NOT enforced (no real caller exists yet — rule 30, no abstraction without a caller):**
 - **Staff seats** — there is no staff-invitation endpoint in this codebase at all (CLAUDE.md lists this under "Deliberately deferred"); only the owner exists from registration. A seat limit would have nothing to gate.
-- **AI access** (`plans.aiAccess`) — `apps/ai-service`'s auth (`get_current_actor`) has no concept of plans and doesn't call back into core-api to check one. Wiring this would mean the AI service querying core-api's `subscriptions` table cross-service for every chat request — real scope, not something to bolt on silently. The column exists so the data model doesn't need to change when this is built.
+- ~~**AI access** (`plans.aiAccess`)~~ — **now enforced** (2026-10-01) by `apps/ai-service`, see ADR 0011's "Addendum: plan-gated Store Copilot". AI access requires `aiAccess` **and** a status of `active`/`past_due`, which is stricter than the product limit above (AI calls cost money per request).
 
 **Not built at all:** revoking/downgrading limits when a subscription's payment fails (`past_due`) — a tenant's plan limits apply based on which plan they're on, regardless of payment status, in this first pass. A `past_due` tenant keeps their plan's limits until either payment recovers or the subscription is canceled outright (`customer.subscription.deleted` sets `status = 'canceled'`, at which point... there is currently no fallback-to-free-plan-limits step either — flagged here rather than silently assumed to work).
 

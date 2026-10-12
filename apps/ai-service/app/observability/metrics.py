@@ -24,3 +24,9 @@ class Metrics:
         self.cache_misses = meter.create_counter("cache.misses")
         self.retrieval_count = meter.create_histogram("retrieval.result_count")
         self.retrieval_score = meter.create_histogram("retrieval.score")
+        # Agent (application/agent/). Cost per run = agent.cost_usd_micros /
+        # agent.runs, sliceable by profile; tokens by model via llm.tokens.
+        self.agent_runs = meter.create_counter("agent.runs")
+        self.agent_iterations = meter.create_histogram("agent.iterations")
+        self.agent_tool_calls = meter.create_counter("agent.tool_calls")
+        self.agent_cost_usd_micros = meter.create_counter("agent.cost_usd_micros")

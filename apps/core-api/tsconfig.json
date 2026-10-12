@@ -13,6 +13,13 @@
     "strict": true,
     "strictNullChecks": true,
     "noImplicitAny": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    // module=commonjs means node10 resolution, which ignores package.json
+    // "exports" — so TypeScript can't find the MCP SDK's subpath typings
+    // (@modelcontextprotocol/sdk/server/mcp.js) even though Node resolves
+    // them fine at runtime. Types only; emitted require() paths are untouched.
+    "paths": {
+      "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/cjs/*"]
+    }
   }
 }

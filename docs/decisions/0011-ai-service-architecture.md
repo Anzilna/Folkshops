@@ -82,3 +82,43 @@ Every query (`DocumentService`, `ChatService`, `PgVectorStore`, the re-embed wor
 - **Migrations stay hand-written SQL, not Alembic.** RLS policies, GRANTs and the ivfflat index can't be expressed as models, so autogenerate couldn't produce them. Trade-off: `models.py` must be updated by hand alongside any new migration.
 - **No `pgvector.asyncpg.register_vector()`** any more — `pgvector.sqlalchemy.Vector` serializes vectors itself, and registering the asyncpg codec on top makes them conflict (`invalid input for query argument`, caught by the integration suite).
 - `expire_on_commit=False` on the session factory — async sessions can't lazily reload an attribute after commit.
+
+
+## Addendum: plan-gated Store Copilot + knowledge base in merchant-admin (2026-10-01)
+
+The RAG pipeline now has its first real UI. merchant-admin has a **Knowledge base** page (`/knowledge`) for uploading, listing, filtering and deleting documents, and the floating **Store Copilot** chat calls `POST /chat` and shows the source filenames for each answer. Access is gated by the store's subscription plan.
+
+**Who can use it.** Every route except `/health` and `/entitlement` goes through `require_ai_access` (`api/dependencies.py`), which checks two things:
+1. **Staff only** (`get_current_staff`). A customer token gets 403 from every route. Customers could previously upload into, and chat against, a store's knowledge base; that was a hole with no caller. The storefront Shopper Agent will be a separate surface.
+2. **Plan entitlement** (`application/entitlements.py`). Allowed when `plans.ai_access` is true and `subscriptions.status` is `active` or `past_due`. Otherwise the route returns **402** with `{detail: {code, message}}`, where `code` is one of `not_in_plan`, `subscription_inactive` or `no_subscription`, so the UI can tell "upgrade your plan" apart from "finish paying".
+
+**Why the plan check reads the database, not core-api over HTTP.** `migrations/0002` gives `folkshops_ai` column-level `SELECT` on `subscriptions(tenant_id, plan_id, status)` and `plans(id, slug, name, ai_access)` only. It can't see Stripe ids or prices. The read is one indexed query under the same RLS tenant context as everything else here. An HTTP call would mean forwarding the tenant (core-api resolves it from the hostname in production) and adding a second failure point. Nothing is cached, so an upgrade or downgrade applies on the very next request. This is the first coupling from this service to core-api's schema (its own tables still have no FKs to `tenants`). The grants live in this service's migrations because they're this role's grants, matching how 0001 scopes it.
+
+**`GET /entitlement`** (staff only, deliberately not gated) is what merchant-admin reads to choose between the real UI and an upgrade prompt. That choice is cosmetic. Enforcement is server-side on every request.
+
+**Other changes in this slice:**
+- `GET /documents` is now paginated, sortable and filterable, returning `{data,total,page,limit,totalPages}` so DataTable can drive it.
+- New `DELETE /documents/{id}`, a hard delete (chunks cascade). Removing a document has to remove it from retrieval.
+- An ingestion job for a document deleted before the job ran exits cleanly instead of retrying.
+- Citations now carry `filename`.
+- `get_current_actor` is `async` and binds `tenant_id`/`actor_id` into structlog's context.
+- `docker-compose.yml` gains an `ai-worker` service (same image, `arq` command). Without it, uploads never leave `uploaded`.
+
+**Still not built:** streaming, multi-turn context (each `/chat` call sends only the latest message to the LLM; turns are stored but not replayed), per-plan document or storage quotas, and a minimum retrieval score (every top-k chunk is cited, however weakly it matched).
+
+
+## Addendum: local embeddings, vector(384) (2026-10-01)
+
+**What changed.** Embeddings are now produced locally by default: `EMBEDDING_PROVIDER=local` runs **`BAAI/bge-small-en-v1.5`** inside ai-service and ai-worker via sentence-transformers (`infrastructure/embeddings/local.py`). It needs no API key, and the ~130MB model downloads once into the `ai-model-cache` compose volume (`HF_HOME=/models`). Retrieval is now semantic: in a live test, "Can I send a jacket back if it doesn't fit?" ranked a returns passage (0.594) above a shipping passage (0.467) with no shared words. `tests/unit/test_local_embeddings.py` checks the same thing against the real model. The chat model is still `LLM_PROVIDER=fake`.
+
+**Schema.** `migrations/0003` changes `document_chunks.embedding` from `vector(1536)` to `vector(384)`, the model's native width. This was chosen over zero-padding to 1536. The trade-off: going back to OpenAI (1536) needs another migration, or OpenAI's `dimensions=384` request parameter, which `OpenAIEmbeddingProvider` doesn't pass yet. Existing vectors are cleared rather than converted, since a vector from one model means nothing to another. Chunk text is kept, and `scripts/reembed_all.py` queues the existing `reembed_document` job for each document (run it inside the ai-worker container; see its docstring). Search now skips chunks whose `embedding IS NULL`.
+
+**Index.** Changed from IVFFlat to **HNSW**. IVFFlat learns its centroids from the rows present when the index is built, and 0001 built it on an empty table, so recall was poor. HNSW has no training step.
+
+**Loading.**
+- Selecting the provider never loads the model. Its width comes from a fixed table, so the startup schema check stays instant.
+- The model is warmed up in a **background task** at startup, never awaited inline. The first build awaited it, and a first-run download held startup past the container healthcheck, so `ai-worker`'s `depends_on` failed.
+- Inference runs in a thread (`asyncio.to_thread`), so a large document doesn't block the event loop.
+- BGE's query instruction prefix is applied to queries only, not documents.
+
+**Image.** The Dockerfile pre-installs CPU-only torch from PyTorch's CPU index; PyPI's default Linux x86 wheel bundles CUDA. The image is still ~3.8GB, up from ~0.9GB, mostly torch plus transformers. `sentence-transformers` moved into `requirements.txt`, and `requirements-reranker.txt` was removed.

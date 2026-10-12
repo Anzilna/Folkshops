@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { DbRouter } from "../../database/db-router";
 import { plans, subscriptions, tenants } from "../../database/schema";
 import { withTenantContext } from "../../database/tenant-context";
@@ -10,6 +10,13 @@ export interface PlatformDashboardSummary {
   subscriptionsByPlan: { planSlug: string; planName: string; count: number }[];
   mrrCents: number;
   recentTenants: { id: string; name: string; slug: string; status: string; createdAt: string; planName: string | null }[];
+}
+
+export interface SubscriptionSnapshot {
+  status: "incomplete" | "active" | "past_due" | "canceled";
+  planSlug: string;
+  planName: string;
+  priceCents: number;
 }
 
 const RECENT_TENANTS_LIMIT = 10;
@@ -37,16 +44,18 @@ const RECENT_TENANTS_LIMIT = 10;
 export class PlatformAdminDashboardService {
   constructor(private readonly dbRouter: DbRouter) {}
 
-  async getSummary(): Promise<PlatformDashboardSummary> {
+  /**
+   * Every tenant plus each one's subscription, gathered tenant by tenant
+   * (see the class comment for why). Shared with the plans page so the
+   * per-tenant fan-out lives in exactly one place.
+   */
+  async loadSubscriptionSnapshot(): Promise<{
+    tenants: (typeof tenants.$inferSelect)[];
+    subscriptionByTenantId: Map<string, SubscriptionSnapshot>;
+  }> {
     const allTenants = await this.dbRouter.read("eventual", (db) => db.select().from(tenants));
 
-    const active = allTenants.filter((t) => t.status === "active").length;
-    const suspended = allTenants.filter((t) => t.status === "suspended").length;
-
-    const subscriptionByTenantId = new Map<
-      string,
-      { status: "incomplete" | "active" | "past_due" | "canceled"; planSlug: string; planName: string; priceCents: number }
-    >();
+    const subscriptionByTenantId = new Map<string, SubscriptionSnapshot>();
     await Promise.all(
       allTenants.map(async (tenant) => {
         const row = await this.dbRouter.read("eventual", (db) =>
@@ -68,6 +77,14 @@ export class PlatformAdminDashboardService {
         if (row) subscriptionByTenantId.set(tenant.id, row);
       }),
     );
+    return { tenants: allTenants, subscriptionByTenantId };
+  }
+
+  async getSummary(): Promise<PlatformDashboardSummary> {
+    const { tenants: allTenants, subscriptionByTenantId } = await this.loadSubscriptionSnapshot();
+
+    const active = allTenants.filter((t) => t.status === "active").length;
+    const suspended = allTenants.filter((t) => t.status === "suspended").length;
 
     const subscriptionsByStatus: PlatformDashboardSummary["subscriptionsByStatus"] = {
       incomplete: 0,

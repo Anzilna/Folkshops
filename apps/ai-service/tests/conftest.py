@@ -11,6 +11,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
+from app.domain.models.document import scope_for
 from app.infrastructure.cache.redis import CacheService
 from app.infrastructure.embeddings.fake import FakeEmbeddingProvider
 from app.infrastructure.persistence.models import DocumentRow
@@ -79,10 +80,29 @@ def make_document(db):
     """
 
     async def _make(tenant_id: uuid.UUID) -> uuid.UUID:
-        row = DocumentRow(tenant_id=tenant_id, filename="test.txt", mime_type="text/plain")
+        row = DocumentRow(
+            tenant_id=tenant_id, filename="test.txt", mime_type="text/plain", scope=scope_for(tenant_id).value
+        )
         async with db.tenant_context(str(tenant_id)) as session:
             session.add(row)
             await session.flush()  # id comes from the column's gen_random_uuid() default
         return row.id
 
     return _make
+
+
+@pytest_asyncio.fixture
+async def make_subscribed_tenant():
+    """Factory for a real tenant on a given plan/status; every tenant it creates is removed afterwards."""
+    from tests.billing_fixtures import create_subscribed_tenant, delete_tenant
+
+    created: list[uuid.UUID] = []
+
+    async def _make(plan_slug: str, status: str = "active") -> uuid.UUID:
+        tenant_id = await create_subscribed_tenant(plan_slug, status)
+        created.append(tenant_id)
+        return tenant_id
+
+    yield _make
+    for tenant_id in created:
+        await delete_tenant(tenant_id)

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePresence } from "./use-presence";
 
-export type NotificationKind = "order" | "stock" | "customer" | "system";
+export type NotificationKind = "order" | "stock" | "customer" | "system" | "store" | "billing" | "security";
 
 export interface NotificationItem {
   id: string;
@@ -17,9 +17,10 @@ export interface NotificationItem {
 }
 
 /**
- * Placeholder data until real events exist (notifications are a Phase 2
- * item — outbox + BullMQ). Timestamps are relative to "now" so the list
- * never looks stale in a demo.
+ * Canned data for previewing the bell in an app with no event source.
+ * Nothing uses it today (merchant-admin and platform-admin both feed the
+ * bell real events) — kept for design/review work on the component alone.
+ * Timestamps are relative to "now" so the list never looks stale.
  */
 export function demoNotifications(): NotificationItem[] {
   const m = (mins: number) => new Date(Date.now() - mins * 60_000).toISOString();
@@ -47,6 +48,10 @@ const KIND_STYLE: Record<NotificationKind, { icon: string; cls: string }> = {
   stock: { icon: "M3 7h18v13H3V7zM3 7l2-4h14l2 4M12 11v4M12 18h.01", cls: "bg-destructive/10 text-destructive" },
   customer: { icon: "M16 19v-1.5a3.5 3.5 0 00-3.5-3.5h-5A3.5 3.5 0 004 17.5V19M9 11a3 3 0 100-6 3 3 0 000 6z", cls: "bg-success/15 text-success" },
   system: { icon: "M12 8v4l3 3M12 3a9 9 0 100 18 9 9 0 000-18z", cls: "bg-muted text-muted-foreground" },
+  // Platform-admin events: a store signing up, money, and admin actions.
+  store: { icon: "M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1", cls: "bg-accent/10 text-accent" },
+  billing: { icon: "M2 7h20v10H2V7zM2 11h20M6 15h3", cls: "bg-success/15 text-success" },
+  security: { icon: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM9 12l2 2 4-4", cls: "bg-muted text-muted-foreground" },
 };
 
 export function NotificationBell({
@@ -57,10 +62,10 @@ export function NotificationBell({
 }: {
   items: NotificationItem[];
   LinkComponent: React.ComponentType<{ href: string; className?: string; children: React.ReactNode; onClick?: () => void }>;
-  /** Optional — when provided, read-state is persisted server-side (called
-   * in addition to the local optimistic update below); when omitted, read
-   * state is local-only, same as before (platform-admin, still on canned
-   * `demoNotifications()`). */
+  /** Optional — when provided, read-state is persisted by the caller (called
+   * in addition to the local optimistic update below): server-side in
+   * merchant-admin, in the browser's localStorage in platform-admin. When
+   * omitted, read state is local to this component only. */
   onMarkRead?: (id: string) => void;
   onMarkAllRead?: () => void;
 }) {
